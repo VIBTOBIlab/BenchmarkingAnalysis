@@ -1,0 +1,416 @@
+---
+title: "01. Tutorial on general benchmarking results and plots"
+output: html_document
+date: "2024-10-31"
+---
+
+## Introduction
+
+This is the first notebook to reproduce the analysis of the bench.resmarking results. More specifically, in this notebook we will go over the results obtained on the in-silico mixtures. In total, 1640 WGBS, 1550 and 440 samples (WGBS, RRBS and MNase-cfRRBS, respectively) have been deconvolved. These samples were generated at different sequencing depths, spanning 10 expected tumor fractions, different tumor types and using 3 DMR selection tools. We will therefore generate plots for all these combinations, step by step.
+
+
+### bench.resmarking metrics
+
+It is important to highlight that to evaluate the performance of the deconvolution tools we considered 3 different key metrics: the root-mean-squared error (RMSE), the area under the curve (AUC-ROC) and the Spearman's rank correlation coefficient (ρ {\displaystyle \rho }). To create an overall bench.resmarking score against which to compare the deconvolution tools, we min-max scaled the metrics and computed the mean of the three metrics to obtain the overall score for each combination. Since RMSE is computed on a proportion of all the samples (specifically, only the samples with tumoral fraction \> 0% --\> 0.87), it will be weighted by this percentage.
+
+### Setting up the environment
+
+First, set up the main directory chaning the paths below
+
+```{r setup}
+knitr::opts_knit$set(root.dir = '~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/')
+# Define the directory containing the CSV files
+dir_path <- "~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/"
+```
+
+Import the necessary libraries for the analysis
+
+```{r message=FALSE, warning=FALSE}
+library(Metrics)
+library(ggpubr)
+library(dplyr)
+library(tidyverse)
+library(stringr)
+library(pROC)
+```
+
+Import the useful functions and the metrics
+
+```{r}
+source("R/compute_auc.R")
+
+# RMSE
+rmse <- function(actual, predicted) {
+  round(sqrt(mean((actual - predicted)^2)),4)
+}
+# Normalized RMSE (NRMSE)
+nrmse <- function(actual, predicted) {
+    round(sqrt(mean((actual - predicted))^2)/mean(actual+10e-8),4)
+}
+# Spearman's rank correlation coefficient (SCC)
+scc <- function(actual, predicted) {
+  cor(actual, predicted, method = "spearman", use = "pairwise.complete.obs")
+}
+```
+
+
+Now, we will import all the results generated and described above. Note that here we expect that you have git cloned the repository and thus have the expected folder structure where in the folder resources/ there are the results files.
+
+```{r}
+df_raw <- read.csv(paste0(dir_path,"resources/final_benchmarking_dataset.csv"))
+bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico")
+```
+
+### Missing values
+
+An important aspect to take into consideration is the number of missing values per tool.
+
+```{r}
+missing_percentage <- bench.res %>%
+     group_by(deconv_tool) %>%
+     summarise(
+         total = n(),
+         missing = sum(is.na(predicted_tf)),
+         percent_missing = 100 * missing / total
+     ) 
+missing_percentage
+```
+
+Since the presence of missing values is very low (meaning that all the tools almost always produce an output), we will just remove them without penalizing the tools that produced missing values or imputing them.
+
+```{r}
+# Remove rows with NA values for further analysis 
+bench.res <- bench.res %>%
+  filter(!is.na(predicted_tf))
+```
+
+
+## Plot the bench.resmarking results
+
+Now we are ready to plot the results for downstream interpretation.
+
+### Plot AUC-ROC of tools at 4 low tumoral fractions
+
+Here we want to answer the question: how good are the deconvolution tools in predicting the presence/absence of the tumor at different tumoral fractions. Here we will investigate the AUC-ROC at 4, very low, tumoral fractions, that will be compared in pair-wise comparisons with 0% tumor mixtures. For each pair-wise comparison, the AUC-ROC will be computed.
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- paste0(dir_path, "plots/aucroc_tumoral_fractions")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+# Define the target fractions
+fractions <- c(0.0001, 0.001, 0.01, 0.05)
+
+# Loop over the type of tumors
+for (type in unique_tumors) {
+  
+  # Create a subdirectory for each tumor
+  tumor_dir <- file.path(output_dir, paste0("tumor_", type))
+  if (!dir.exists(tumor_dir)) dir.create(tumor_dir)
+  
+  # Loop over sequencing depths
+  filt_tum <- subset(bench.res, bench.res$tumor_type == type)
+  for (seqdepth in unique(filt_tum$seq_depth)) {
+    
+    # Loop over the DMR tools    
+    filt_depth <- subset(filt_tum, filt_tum$seq_depth == seqdepth)
+    for (dmrtool in unique(filt_depth$dmr_tool)) {
+      
+      # Create a new dataset dataframe where to store AUC-ROC results and loop over the deconvolution tools
+      aucroc_data <- data.frame()
+      for (deconv in unique(filt_depth$deconv_tool)) {
+  
+        # Loop over the tumoral fractions specified above
+        for (fraction in fractions) {
+          filt_df <- filt_depth %>%
+            filter(expected_tf %in% c(0,fraction) & 
+                   dmr_tool == dmrtool &
+                   deconv_tool == deconv)
+
+          # Compute the AUC-ROC score per combination and concatanate it to the final dataframe
+          auc_single_combination <- compute_auc(filt_df, fraction, deconv)
+          aucroc_data <- rbind(aucroc_data, auc_single_combination)
+        }
+      }
+
+      # Plot the final AUC-ROC dataframe at the specified tumor type, seq depth and DMR tool
+      p <- ggplot(aucroc_data, aes(x = fpr, y = tpr, color = as.factor(fraction))) +
+        geom_line(size = 1) +
+        facet_wrap(~tool, ncol = 2) +
+        geom_point(aes(x = 0, y = auc, color = as.factor(fraction)), shape = 1, stroke=1.5, size=2, show.legend = F) +
+        labs(
+          title = paste0("AUC-ROC at different tumoral fractions (",type," | ",dmrtool,")"),
+          x = "FPR",
+          y = "TPR",
+          color = "Tumoral fraction"
+        ) +
+        theme_classic() +
+        theme(
+          axis.text.x = element_text(angle = 45, vjust = 0.7),
+          legend.position = "bottom"
+        ) + 
+        scale_color_manual(values = c("1e-04"="#56B4E9", "0.001"="#CC79A7", "0.01"="#009373", "0.05"="#E69F00"))
+        
+      # Save the plot as an image
+      output_file <- file.path(tumor_dir, paste0("auc", "_depth_", seqdepth, "_tumor",type,"_", dmrtool, ".png"))
+      ggsave(output_file, plot = p, width = 4, height = 8)
+    }
+  }
+}
+```
+
+### Limit of Detection (LoD)
+
+The tumoral limit of detection (LoD) in the context of cellular deconvolution tools refers to the lowest tumor fraction in a sample at which a deconvolution method can reliably distinguish and quantify tumor-derived signals from background noise.
+
+It is typically determined by assessing the performance of the tool across a range of tumor fractions (e.g., 1%, 5%, 10%) and identifying the minimum proportion at which tumor-derived cell types can be consistently detected with acceptable accuracy and precision.
+
+We will investigate and compute the LoD by the statistical significance of a one-sided Mann-Whitney U-test between the estimated tumor fractions of the samples at every dilution level (e.g. 1%, 5% etc) and the control samples (0% tumor fraction).
+
+```{r}
+my_comparisons <- list(
+  c("0", "1e-04"), 
+  c("0", "0.001"), 
+  c("0", "0.003"), 
+  c("0", "0.007"),
+  c("0", "0.01"),
+  c("0", "0.025"),
+  c("0", "0.05"),
+  c("0", "0.1"),
+  c("0", "0.25"),
+  c("0", "0.5")
+)
+perform_custom_wilcox_tests <- function(data, comparisons, correction.method = "BH") {
+  # data: dataframe or matrix with numeric features in columns
+  # comparisons: list of length-2 vectors specifying groups to compare
+  # correction.method: method for p.adjust (e.g., "BH", "bonferroni", etc.)
+  
+  stats <- data.frame()  # empty result dataframe
+  
+  for (comp in comparisons) {
+
+      data.filt <- data[data$expected_tf %in% comp, ]
+      group1 <- comp[1]
+      group2 <- comp[2]
+
+      # Perform Wilcoxon test
+      test <- wilcox.test(predicted_tf ~ expected_tf, data.filt, alternative = "less")
+
+      # Save results
+      stats <- rbind(stats, data.frame(
+        group1 = group1,
+        group2 = group2,
+        p = test$p.value
+      ))
+  }
+
+  # Multiple testing correction across all tests
+  stats$p.adj <- p.adjust(stats$p, method = correction.method)
+  
+  # Number of comparisons
+  num_comparisons <- nrow(stats)
+  
+  # Get max and min y-values
+  max_tum <- max(data.filt$predicted_tf, na.rm = TRUE)  
+  min_tum <- min(data.filt$predicted_tf, na.rm = TRUE)  
+  
+  # Assign y.position dynamically
+  stats <- stats %>%
+        arrange(as.numeric(group2)) %>%
+        mutate(
+          y.position = seq(from = max_tum * 1.1,  # Start slightly above max
+                           to = max_tum * 1.8,   # Space out comparisons
+                           length.out = num_comparisons),
+          star = case_when(
+            p.adj <= 0.0001 ~ "****",
+            p.adj <= 0.001 ~ "***",
+            p.adj <= 0.01 ~ "**",
+            p.adj <= 0.05 ~ "*",
+            TRUE ~ "ns"  # or "" if you don't want to show anything
+  ))
+
+  stats <- stats %>%
+    mutate(p = formatC(p, format = "e", digits = 1), p.adj = formatC(p.adj, format = "e", digits = 1))
+  return(stats)
+}
+```
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- paste0(dir_path, "new_plots/LoD")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+# Get unique values of sequencing depth,  and expected_tf
+unique_depths <- na.omit(unique(bench.res$seq_depth))
+unique_dmr_tools <- unique(bench.res$dmr_tool)
+unique_tumors <- unique(bench.res$tumor_type)
+unique_deconv <- unique(bench.res$deconv_tool)
+all.stats <- data.frame()
+
+# Loop over sequencing depth
+for (seqdepth in unique_depths) {
+  
+  # Create a subdirectory for this depth (optional)
+  depth_dir <- file.path(output_dir, paste0("depth_", seqdepth))
+  if (!dir.exists(depth_dir)) dir.create(depth_dir)
+    
+  for (type in unique_tumors) {
+      
+    for (dmrtool in unique_dmr_tools) {
+  
+      for (deconv in unique_deconv) {
+            filt_df <- bench.res %>%
+              filter(dmr_tool == dmrtool &
+                     deconv_tool == deconv &
+                     seq_depth ==seqdepth &
+                     tumor_type == type)
+            
+            # Check if the data frame is empty
+            if (nrow(filt_df) == 0 | length(unique(filt_df$expected_tf)) < 2) {  
+              next  # Skip this iteration
+            }
+            
+            stats <- perform_custom_wilcox_tests(filt_df, my_comparisons, correction.method = "BH")
+            lod <- stats %>%
+              arrange(desc(as.numeric(group2))) %>%
+              filter(as.numeric(p.adj) > 0.01) %>%
+              slice(1) %>%
+              pull(group2)
+            
+            # If lod is empty or NA, assign 1
+            if (length(lod) == 0 || is.na(lod)) {
+              lod <- 1
+            }
+            
+            all.stats <- rbind(all.stats,c(deconv,dmrtool,type,seqdepth,lod))
+            p <- filt_df %>%
+                      group_by(deconv_tool) %>%
+                      ggplot(aes(x = as.factor(expected_tf), y = predicted_tf)) +
+                      geom_boxplot() +
+                      labs(
+                            title = paste("LoD | Tool:", deconv,"| DMR tool:", dmrtool,"| Depth:",seqdepth, "| Tumor:",type),
+                            x = "",
+                            y = "Estimated tumoral fraction (%)"
+                          ) +
+                      theme_classic() +
+                      theme(
+                            axis.text.x = element_text(angle = 45, hjust = 1),
+                            panel.grid.major.y = element_line(color = "grey90", linewidth = 0.5)  # add horizontal grid
+                      ) + 
+                      stat_pvalue_manual(stats, label = "star", xmin = "group1", xmax = "group2", y.position = "y.position")
+            
+            # Save the plot as an image
+            output_file <- file.path(depth_dir, paste0("LoD_",deconv,"_depth_", seqdepth, "_",type,"_", dmrtool, ".png"))
+            ggsave(output_file, plot = p, width = 8, height = 6)
+      }
+    }
+  }
+}
+```
+
+```{r}
+# Function to compute LOD per combination
+colnames(all.stats) <- c("deconv_tool","dmr_tool","tumor_type","seq_depth","lod")
+all.stats <- all.stats %>%
+  mutate(lod = as.numeric(lod)) %>%
+  group_by(dmr_tool, tumor_type, seq_depth) %>%
+  mutate(
+    rank_raw = rank(lod, ties.method = "min")
+  )
+#write.csv(all.stats,"lod_allstats.csv")
+```
+
+```{r}
+lod_tools <- read.csv("lod_allstats.csv", row.names = 1)
+lod_tools_aggr <- lod_tools %>%
+  filter(lod_tools$tumor_type!="NBL") %>%
+  group_by(deconv_tool,seq_depth) %>%
+  summarise(LoD = median(lod))
+lod_tools_aggr_cfrrbs <- lod_tools %>%
+  filter(lod_tools$tumor_type=="NBL") %>%
+  group_by(deconv_tool,seq_depth) %>%
+  summarise(LoD = median(lod))
+mat <- lod_tools_aggr_cfrrbs %>%
+  pivot_wider(
+    names_from = seq_depth,
+    values_from = LoD
+  ) %>%
+  column_to_rownames(var = "deconv_tool") %>% 
+  select(all_of(col_order))
+```
+
+```{r}
+# install.packages("ComplexHeatmap") # if not already installed
+library(ComplexHeatmap)
+
+# Define the exact order you want
+col_order <- c("RRBS_2M", "RRBS_5M", "RRBS_10M", "RRBS_15M","RRBS_20M", "WGBS_62M", "WGBS_183M", "WGBS_310M", "WGBS_620M")
+row_order_wgbs <- c("CelFiE", "EpiDISH_CP_ineq", "EpiDISH_CP_eq", "MetDecode", "meth_atlas", "UXM", "PRMeth", "EpiSCORE", "EpiDISH_RPC", "CIBERSORT")
+row_order_rrbs <- c("CelFiE", "MetDecode", "EpiDISH_CP_ineq", "EpiDISH_CP_eq", "meth_atlas", "PRMeth", "EpiDISH_RPC", "EpiSCORE","CIBERSORT", "UXM")
+mat <- lod_tools_aggr %>%
+  mutate(seq_depth = ifelse(seq_depth %in% c("62M", "183M", "310M", "620M"),
+                            paste0("WGBS_", seq_depth),
+                            paste0("RRBS_", seq_depth))) %>%
+  pivot_wider(
+    names_from = seq_depth,
+    values_from = LoD
+  ) %>%
+  column_to_rownames(var = "deconv_tool") %>% 
+  select(all_of(col_order))
+mat_rrbs <- mat[row_order_rrbs, grepl("^RRBS_", colnames(mat))]
+mat_wgbs <- mat[row_order_wgbs, grepl("^WGBS_", colnames(mat))]
+
+col_fun <- colorRamp2(
+  c(0.0001, 0.001, 0.003, 0.007, max(mat)),
+  c("#67000d", "#cb181d", "#ef3b2c", "#fb6a4a", "#FAEBDDFF")
+)
+
+# Column annotations
+depth_rrbs    <- c("2M","5M", "10M", "15M", "20M")
+depth_wgbs    <- c("62M", "183M", "310M", "620M")
+ha_rrbs <- HeatmapAnnotation(
+  Depth    = depth_rrbs,
+  col = list(
+    Depth = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF")
+  ),
+  annotation_name_side = "left"
+)
+ha_wgbs <- HeatmapAnnotation(
+  Depth    = depth_wgbs,
+  col = list(
+    Depth = c("62M"="#FAEBDDFF","183M"="#F69C73FF","310M"="#A11A5BFF","620M"="#03051AFF")
+  ),
+  annotation_name_side = "left"
+)
+```
+
+```{r}
+
+# Plot heatmap
+p1 <- Heatmap(mat_rrbs,
+        name = "Limit of Detection",
+        col = col_fun,
+        cluster_rows = F,
+        top_annotation = ha_rrbs,
+        show_column_names = T,
+        cluster_columns = F,
+        column_labels = depth_rrbs,
+        column_names_side = "top",
+        row_names_gp = gpar(fontsize = 15),
+        column_names_gp = gpar(fontsize = 15),
+        column_names_rot = 0, 
+        column_names_centered = T)
+p2 <- Heatmap(mat_wgbs,
+        name = "Limit of Detection",
+        col = col_fun,
+        cluster_rows = F,
+        top_annotation = ha_wgbs,
+        show_column_names = T,
+        cluster_columns = F,
+        column_labels = depth_wgbs,
+        column_names_side = "top",
+        row_names_gp = gpar(fontsize = 15),
+        column_names_gp = gpar(fontsize = 15),
+        column_names_rot = 0, 
+        column_names_centered = T)
+```

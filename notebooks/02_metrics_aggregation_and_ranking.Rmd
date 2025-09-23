@@ -1,0 +1,634 @@
+---
+title: "01. Tutorial on general benchmarking results and plots"
+output: html_document
+date: "2024-10-31"
+---
+
+## Introduction
+
+This is the first notebook to reproduce the analysis of the bench.resmarking results. More specifically, in this notebook we will go over the results obtained on the in-silico mixtures. In total, 1640 WGBS, 1550 and 440 samples (WGBS, RRBS and MNase-cfRRBS, respectively) have been deconvolved. These samples were generated at different sequencing depths, spanning 10 expected tumor fractions, different tumor types and using 3 DMR selection tools. We will therefore generate plots for all these combinations, step by step.
+
+### Benchmarking metrics
+
+It is important to highlight that to evaluate the performance of the deconvolution tools we considered 3 different key metrics: the root-mean-squared error (RMSE), the area under the curve (AUC-ROC) and the Spearman's rank correlation coefficient (ρ {\displaystyle \rho }). To create an overall bench.resmarking score against which to compare the deconvolution tools, we min-max scaled the metrics and computed the mean of the three metrics to obtain the overall score for each combination. Since RMSE is computed on a proportion of all the samples (specifically, only the samples with tumoral fraction \> 0% --\> 0.87), it will be weighted by this percentage.
+
+### Setting up the environment
+
+First, set up the main directory chaning the paths below
+
+```{r setup}
+knitr::opts_knit$set(root.dir = '~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/')
+# Define the directory containing the CSV files
+dir_path <- "~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/"
+```
+
+Import the necessary libraries for the analysis
+
+```{r message=FALSE, warning=FALSE}
+library(Metrics)
+library(ggpubr)
+library(dplyr)
+library(tidyverse)
+library(ComplexHeatmap)
+library(stringr)
+library(pROC)
+```
+
+Import the useful functions and the metrics
+
+```{r}
+source("R/compute_auc.R")
+
+# RMSE
+rmse <- function(actual, predicted) {
+  round(sqrt(mean((actual - predicted)^2)),4)
+}
+# Normalized RMSE (NRMSE)
+nrmse <- function(actual, predicted) {
+    round(sqrt(mean((actual - predicted))^2)/mean(actual+10e-8),4)
+}
+# Spearman's rank correlation coefficient (SCC)
+scc <- function(actual, predicted) {
+  cor(actual, predicted, method = "spearman", use = "pairwise.complete.obs")
+}
+```
+
+Now, we will import all the results generated and described above. Note that here we expect that you have git cloned the repository and thus have the expected folder structure where in the folder resources/ there are the results files.
+
+```{r}
+df_raw <- read.csv(paste0(dir_path,"resources/final_benchmarking_dataset.csv"))
+bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico")
+```
+
+### Missing values
+
+An important aspect to take into consideration is the number of missing values per tool.
+
+```{r}
+missing_percentage <- bench.res %>%
+     group_by(deconv_tool) %>%
+     summarise(
+         total = n(),
+         missing = sum(is.na(predicted_tf)),
+         percent_missing = 100 * missing / total
+     ) 
+missing_percentage
+```
+
+Since the presence of missing values is very low (meaning that all the tools almost always produce an output), we will just remove them without penalizing the tools that produced missing values or imputing them.
+
+```{r}
+# Remove rows with NA values for further analysis 
+bench.res <- bench.res %>%
+  filter(!is.na(predicted_tf))
+```
+
+## Plot the results
+
+### Heatmap of all combinations
+
+As a first step in the analysis, we think that a comphrensive heatamap of all possible combinations might be useful as a starting point. We will first compute the metrics necessary for the heatmap: being RMSE, AUC-ROC score, SCC and the overall Score. Since the RMSE is not a scale-free metric, it will increase at increasing observed tumoral fraction. This determines that the RMSE at high tumoral fraction (e.g. 0.25 and 0.5) will dominate the overall and advantage those tools that perform well uniquely at high tumoral fractions. To account for this bias, we have decided to compute the RMSE separately at each observed tumoral fraction within each combination, then min-max scale it across deconvolution tools and aggregate the individual min-max scaled RMSE at each tumoral fraction using the mean to get a unique RMSE per combination.
+
+```{r}
+rmse_minmax <- bench.res %>%
+  filter(expected_tf != 0) %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type, expected_tf) %>%
+  mutate(RMSE = rmse(expected_tf, predicted_tf)) %>%
+  ungroup() %>%
+  group_by(dmr_tool, seq_depth, tumor_type, expected_tf) %>%
+  mutate(
+    RMSE_min = min(RMSE),
+    RMSE_max = max(RMSE),
+    RMSE_minmax = (RMSE - RMSE_min) / (RMSE_max - RMSE_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(RMSE = 1-mean(RMSE_minmax), .groups = "drop")
+```
+
+Then we compute the AUC for each tool. To compute it, we will loop over each combination and calculate the AUC-ROC score at each tumor fraction. Then, to get an estimation of the AUC-ROC score per combination, we will average the individual AUC-ROC scores per fraction. We will finally min-max scale it as we did with the RMSE.
+
+```{r}
+# Create a new dataset dataframe where to store AUC-ROC results
+aucroc_data <- data.frame()
+# Select the samples with tumoral fractions > 0%
+unique_fractions <- unique(bench.res$expected_tf)
+unique_fractions <- subset(unique_fractions, unique_fractions != 0)
+
+# Loop over the type of tumors
+for (type in unique(bench.res$tumor_type)) {
+  
+  # Loop over sequencing depths
+  filt_tum <- subset(bench.res, bench.res$tumor_type == type)
+  for (seqdepth in unique(filt_tum$seq_depth)) {
+    
+    # Loop over the DMR tools    
+    filt_depth <- subset(filt_tum, filt_tum$seq_depth == seqdepth)
+    for (dmrtool in unique(filt_depth$dmr_tool)) {
+      
+      # Loop over the deconvolution tools
+      for (deconv in unique(filt_depth$deconv_tool)) {
+  
+        # Loop over the tumoral fractions specified above
+        for (fraction in unique_fractions) {
+          filt_df <- filt_depth %>%
+            filter(expected_tf %in% c(0,fraction) & 
+                   dmr_tool == dmrtool &
+                   deconv_tool == deconv)
+
+          # Compute the AUC-ROC score per combination and concatanate it to the final dataframe
+          auc_single_combination <- compute_auc(filt_df, fraction, deconv)
+          aucroc_data <- rbind(aucroc_data, auc_single_combination)
+        }
+      }
+    }
+  }
+}
+auc_minmax <- aucroc_data %>%
+    group_by(deconv_tool, dmr_tool, seq_depth, tumor_type, expected_tf) %>%
+    summarize(AUC=mean(auc),.groups = "drop") %>%
+    group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+    summarize(meanAUC=mean(AUC),.groups = "drop") %>%
+    group_by(dmr_tool, seq_depth, tumor_type) %>%
+    mutate(
+      AUC_min = min(meanAUC),
+      AUC_max = max(meanAUC),
+      AUC_minmax = (meanAUC - AUC_min) / (AUC_max - AUC_min)
+    ) %>%
+    group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+    summarise(AUC = AUC_minmax, .groups = "drop")
+```
+
+Finally, we compute the SCC. The SCC is computed for each combination pooling all the observed tumor fractions together to get a value for each combination. The SCC is then min-max scaled.
+
+```{r}
+# Compute the metrics: modify the RMSE= 1) nrmse 2) rmse 3) rmse of logit(values)
+scc_minmax <- bench.res %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(SCC = cor(expected_tf, predicted_tf, method = "spearman"), .groups = "drop") %>%
+  ungroup() %>%
+  group_by(dmr_tool, seq_depth, tumor_type) %>%
+  mutate(
+    SCC_min = min(SCC),
+    SCC_max = max(SCC),
+    SCC_minmax = (SCC - SCC_min) / (SCC_max - SCC_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(SCC = SCC_minmax, .groups = "drop")
+```
+
+We can now combine these metrics into a unique dataframe.
+
+```{r}
+df.metrics <- rmse_minmax %>%
+  left_join(scc_minmax) %>%
+  left_join(auc_minmax)
+```
+
+To get an overview of the combined metrics and compute an overall score, we will just aggregate them using a weighted average as previously described.
+
+```{r}
+# Compute the number of zeros and non-zero observations
+num.zeros <- nrow(bench.res[bench.res$expected_tf==0,])
+num.nonzeros <- nrow(bench.res[bench.res$expected_tf!=0,])
+
+# Compute the total number of observation
+tot <- num.nonzeros + num.zeros
+
+# Compute the Score
+df.metrics$Score <- df.metrics$SCC + ( num.nonzeros/tot )*df.metrics$RMSE + df.metrics$AUC
+```
+
+### Plot the data of WGBS
+
+We are now ready to plot an comprehensive heatmap of the WGBS dataset describing all the different combinations. We will first subset the metrics dataframe and retain only the tumor samples belonging to the WGBS dataset.
+
+```{r}
+final_wgbs_df <- df.metrics %>% filter(tumor_type %in% c("LUAD","LUSC","BRCA","BLCA"))
+```
+
+Change the format of the dataframe to a long format
+
+```{r}
+# Create 2 columns corresponding to the deconvolution tool names collapsed with the sequencing depths and dmr tools
+final_wgbs_df_mutated <- final_wgbs_df %>%
+  mutate(tool_dmr_combination = paste(deconv_tool, dmr_tool, sep = "_")) %>%
+  mutate(tumor_seq_combination = paste(tumor_type, seq_depth, sep = "_"))
+
+# Make a long format of the df
+final_wgbs_df_long <- final_wgbs_df_mutated %>% 
+  pivot_longer(
+    cols = c(RMSE,AUC,SCC,Score),
+    names_to = "metric",
+    values_to = "value"
+  ) %>%
+  group_by(tool_dmr_combination, metric, tumor_seq_combination) %>%
+  summarise(value = value, .groups = "drop")
+```
+
+Now, per metric, select only the column corresponding to it, go back to the wider format and transform it to a matrix.
+
+```{r}
+# Specify the order of the columns for visualization purposes
+desired_order <- c("LUAD_62M", "LUAD_183M", "LUAD_310M", "LUAD_620M",
+                   "LUSC_62M", "LUSC_183M", "LUSC_310M", "LUSC_620M",
+                   "BRCA_62M", "BRCA_183M", "BRCA_310M", "BRCA_620M",
+                   "BLCA_62M", "BLCA_183M", "BLCA_310M", "BLCA_620M")
+
+# AUC matrix
+wgbs_auc_mat <- final_wgbs_df_long %>%
+  filter(metric == "AUC") %>%
+  select(tool_dmr_combination, tumor_seq_combination, value) %>%
+  pivot_wider(names_from = tumor_seq_combination, values_from = value) %>%
+  column_to_rownames("tool_dmr_combination") %>%
+  as.matrix()
+wgbs_auc_mat <- wgbs_auc_mat[, desired_order]
+
+# RMSE matrix
+wgbs_rmse_mat <- final_wgbs_df_long %>%
+  filter(metric == "RMSE") %>%
+  select(tool_dmr_combination, tumor_seq_combination, value) %>%
+  pivot_wider(names_from = tumor_seq_combination, values_from = value) %>%
+  column_to_rownames("tool_dmr_combination") %>%
+  as.matrix()
+wgbs_rmse_mat <- wgbs_rmse_mat[, desired_order]
+
+# SCC matrix
+wgbs_scc_mat <- final_wgbs_df_long %>%
+  filter(metric == "SCC") %>%
+  select(tool_dmr_combination, tumor_seq_combination, value) %>%
+  pivot_wider(names_from = tumor_seq_combination, values_from = value) %>%
+  column_to_rownames("tool_dmr_combination") %>%
+  as.matrix()
+wgbs_scc_mat <- wgbs_scc_mat[, desired_order]
+
+# Score matrix
+wgbs_score_mat <- final_wgbs_df_long %>%
+  filter(metric == "Score") %>%
+  select(tool_dmr_combination, tumor_seq_combination, value) %>%
+  pivot_wider(names_from = tumor_seq_combination, values_from = value) %>%
+  column_to_rownames("tool_dmr_combination") %>%
+  as.matrix()
+wgbs_score_mat <- wgbs_score_mat[, desired_order]
+```
+
+Oder the rows based on the Score values to give kind of a ranking
+
+```{r}
+# Compute row means of the Score matrix
+score_means <- rowMeans(wgbs_score_mat, na.rm = TRUE)
+
+# Order the row names based on descending Score (you can use decreasing = FALSE for ascending)
+ordered_rows <- names(sort(score_means, decreasing = TRUE))
+
+# Reorder all matrices by the ordered row names
+wgbs_score_mat <- wgbs_score_mat[ordered_rows, ]
+wgbs_auc_mat   <- wgbs_auc_mat[ordered_rows, ]
+wgbs_rmse_mat  <- wgbs_rmse_mat[ordered_rows, ]
+wgbs_scc_mat   <- wgbs_scc_mat[ordered_rows, ]
+```
+
+And now we can plot the results in a heatmap using ComplexHeatmap package.
+
+```{r}
+# Define tumor types and sequencing depths for the annotations
+seq_depth <- rep(c("62M", "183M", "310M", "620M"), 4)
+tumors    <- rep(c("LUAD", "LUSC", "BRCA", "BLCA"), each = 4)
+
+# Assign palettes
+col_anno <- HeatmapAnnotation(
+  SeqDepth = seq_depth,
+  Tumor    = tumors,
+  col = list(
+    SeqDepth = c("62M"="#FAEBDDFF","183M"="#F69C73FF","310M"="#A11A5BFF","620M"="#03051AFF"),
+    Tumor = c("LUAD"="#ff7f0e", "BRCA"="#2ca02c",
+              "LUSC"="#9467bd", "BLCA"="#8c564b")
+  ),
+  show_annotation_name = FALSE
+)
+
+# Define heatmap settings shared across all plots
+common_opts <- list(
+  cluster_rows = FALSE,
+  cluster_columns = FALSE,
+  column_names_rot = 45,
+  show_row_dend = TRUE,
+  show_column_names = FALSE,
+  show_column_dend = FALSE,
+  top_annotation = col_anno,
+  column_labels = tumors
+)
+
+# Put all matrices and their titles/names in a list
+heatmap_data <- list(
+  AUC         = wgbs_auc_mat,
+  RMSE        = wgbs_rmse_mat,
+  SCC         = wgbs_scc_mat,
+  Score       = wgbs_score_mat
+)
+
+# Generate heatmaps with do.call
+heatmaps <- lapply(names(heatmap_data), function(name) {
+  do.call(Heatmap, c(
+    list(
+      matrix = heatmap_data[[name]],
+      name = name,
+      column_title = name
+    ),
+    common_opts
+  ))
+})
+draw(Reduce(`+`, heatmaps))
+```
+
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- paste0(dir_path, "plots/comprehensive_heatamaps")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+# Combine and draw
+pdf(paste0(dir_path,"plots/comprehensive_heatamaps/wgbs_heatmap.pdf"), width = 12, height = 6)
+draw(Reduce(`+`, heatmaps))
+dev.off()
+```
+
+### Plot the data of RRBS
+
+Here we will follow the same steps as before, but for the RRBS dataset.
+
+```{r}
+final_rrbs_df <- df.metrics %>% filter(tumor_type %in% c("CRC","LC","PC"))
+```
+
+```{r}
+# Create 2 columns corresponding to the deconvolution tool names collapsed with the sequencing depths and dmr tools
+final_rrbs_df_mutated <- final_rrbs_df %>%
+  mutate(tool_dmr_combination = paste(deconv_tool, dmr_tool, sep = "_")) %>%
+  mutate(tumor_seq_combination = paste(tumor_type, seq_depth, sep = "_"))
+
+# Make a long format of the df
+final_rrbs_df_long <- final_rrbs_df_mutated %>% 
+  pivot_longer(
+    cols = c(RMSE,AUC,SCC,Score),
+    names_to = "metric",
+    values_to = "value"
+  ) %>%
+  group_by(tool_dmr_combination, metric, tumor_seq_combination) %>%
+  summarise(value = value, .groups = "drop")
+```
+
+ 
+```{r}
+# Specify the order of the columns for visualization purposes
+desired_order <- c("LC_2M","LC_5M", "LC_10M", "LC_15M", "LC_20M",
+                   "CRC_2M","CRC_5M", "CRC_10M", "CRC_15M", "CRC_20M",
+                   "PC_2M","PC_5M", "PC_10M", "PC_15M", "PC_20M")
+
+# AUC matrix
+rrbs_auc_mat <- final_rrbs_df_long %>%
+  filter(metric == "AUC") %>%
+  select(tool_dmr_combination, tumor_seq_combination, value) %>%
+  pivot_wider(names_from = tumor_seq_combination, values_from = value) %>%
+  column_to_rownames("tool_dmr_combination") %>%
+  as.matrix()
+rrbs_auc_mat <- rrbs_auc_mat[, desired_order]
+
+# RMSE matrix
+rrbs_rmse_mat <- final_rrbs_df_long %>%
+  filter(metric == "RMSE") %>%
+  select(tool_dmr_combination, tumor_seq_combination, value) %>%
+  pivot_wider(names_from = tumor_seq_combination, values_from = value) %>%
+  column_to_rownames("tool_dmr_combination") %>%
+  as.matrix()
+rrbs_rmse_mat <- rrbs_rmse_mat[, desired_order]
+
+# SCC matrix
+rrbs_scc_mat <- final_rrbs_df_long %>%
+  filter(metric == "SCC") %>%
+  select(tool_dmr_combination, tumor_seq_combination, value) %>%
+  pivot_wider(names_from = tumor_seq_combination, values_from = value) %>%
+  column_to_rownames("tool_dmr_combination") %>%
+  as.matrix()
+rrbs_scc_mat <- rrbs_scc_mat[, desired_order]
+
+# Score matrix
+rrbs_score_mat <- final_rrbs_df_long %>%
+  filter(metric == "Score") %>%
+  select(tool_dmr_combination, tumor_seq_combination, value) %>%
+  pivot_wider(names_from = tumor_seq_combination, values_from = value) %>%
+  column_to_rownames("tool_dmr_combination") %>%
+  as.matrix()
+rrbs_score_mat <- rrbs_score_mat[, desired_order]
+```
+
+```{r}
+# Compute row means of the Score matrix
+score_means <- rowMeans(rrbs_score_mat, na.rm = TRUE)
+
+# Order the row names based on descending Score (you can use decreasing = FALSE for ascending)
+ordered_rows <- names(sort(score_means, decreasing = TRUE))
+
+# Reorder all matrices by the ordered row names
+rrbs_score_mat <- rrbs_score_mat[ordered_rows, ]
+rrbs_auc_mat   <- rrbs_auc_mat[ordered_rows, ]
+rrbs_rmse_mat  <- rrbs_rmse_mat[ordered_rows, ]
+rrbs_scc_mat   <- rrbs_scc_mat[ordered_rows, ]
+```
+
+```{r}
+seq_depth <- rep(c("2M", "5M", "10M", "15M", "20M"), 3)
+tumors    <- rep(c("LC", "CRC", "PC"), each = 5)
+
+col_anno <- HeatmapAnnotation(
+  SeqDepth = seq_depth,
+  Tumor    = tumors,
+  col = list(
+    SeqDepth = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF"),
+    Tumor = c("LC"="#ff7f0e", "CRC"="#2ca02c", "PC"="#9467bd")
+  ),
+  show_annotation_name = FALSE
+)
+
+# Define heatmap settings shared across all plots
+common_opts <- list(
+  cluster_rows = FALSE,
+  cluster_columns = FALSE,
+  column_names_rot = 45,
+  show_row_dend = TRUE,
+  show_column_names = FALSE,
+  show_column_dend = FALSE,
+  top_annotation = col_anno,
+  column_labels = tumors
+)
+
+# Put all matrices and their titles/names in a list
+heatmap_data <- list(
+  AUC         = rrbs_auc_mat,
+  RMSE        = rrbs_rmse_mat,
+  SCC         = rrbs_scc_mat,
+  Score       = rrbs_score_mat
+)
+
+# Generate heatmaps with do.call
+heatmaps <- lapply(names(heatmap_data), function(name) {
+  do.call(Heatmap, c(
+    list(
+      matrix = heatmap_data[[name]],
+      name = name,
+      column_title = name
+    ),
+    common_opts
+  ))
+})
+draw(Reduce(`+`, heatmaps))
+```
+
+```{r eval=FALSE, include=FALSE}
+# Create the main directory to save the plots
+output_dir <- paste0(dir_path, "plots/comprehensive_heatamaps")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+# Combine and draw
+pdf(paste0(dir_path,"plots/comprehensive_heatamaps/rrbs_heatmap.pdf"), width = 12, height = 6)
+draw(Reduce(`+`, heatmaps))
+dev.off()
+```
+
+### Plot the data of cfRRBS
+
+Here we will follow the same steps as before, but for the cfRRBS dataset.
+
+```{r}
+final_cfrrbs_df <- df.metrics %>% filter(tumor_type %in% c("NBL"))
+```
+
+```{r}
+# Create 2 columns corresponding to the deconvolution tool names collapsed with the sequencing depths and dmr tools
+final_cfrrbs_df_mutated <- final_cfrrbs_df %>%
+  mutate(tool_dmr_combination = paste(deconv_tool, dmr_tool, sep = "_")) %>%
+  mutate(tumor_seq_combination = paste(tumor_type, seq_depth, sep = "_"))
+
+# Make a long format of the df
+final_cfrrbs_df_long <- final_cfrrbs_df_mutated %>% 
+  pivot_longer(
+    cols = c(RMSE,AUC,SCC,Score),
+    names_to = "metric",
+    values_to = "value"
+  ) %>%
+  group_by(tool_dmr_combination, metric, tumor_seq_combination) %>%
+  summarise(value = value, .groups = "drop")
+```
+
+```{r}
+# Specify the order of the columns for visualization purposes
+desired_order <- c("NBL_2M","NBL_5M", "NBL_10M", "NBL_15M", "NBL_20M")
+
+# AUC matrix
+cfrrbs_auc_mat <- final_cfrrbs_df_long %>%
+  filter(metric == "AUC") %>%
+  select(tool_dmr_combination, tumor_seq_combination, value) %>%
+  pivot_wider(names_from = tumor_seq_combination, values_from = value) %>%
+  column_to_rownames("tool_dmr_combination") %>%
+  as.matrix()
+cfrrbs_auc_mat <- cfrrbs_auc_mat[, desired_order]
+
+# RMSE matrix
+cfrrbs_rmse_mat <- final_cfrrbs_df_long %>%
+  filter(metric == "RMSE") %>%
+  select(tool_dmr_combination, tumor_seq_combination, value) %>%
+  pivot_wider(names_from = tumor_seq_combination, values_from = value) %>%
+  column_to_rownames("tool_dmr_combination") %>%
+  as.matrix()
+cfrrbs_rmse_mat <- cfrrbs_rmse_mat[, desired_order]
+
+# SCC matrix
+cfrrbs_scc_mat <- final_cfrrbs_df_long %>%
+  filter(metric == "SCC") %>%
+  select(tool_dmr_combination, tumor_seq_combination, value) %>%
+  pivot_wider(names_from = tumor_seq_combination, values_from = value) %>%
+  column_to_rownames("tool_dmr_combination") %>%
+  as.matrix()
+cfrrbs_scc_mat <- cfrrbs_scc_mat[, desired_order]
+
+# Score matrix
+cfrrbs_score_mat <- final_cfrrbs_df_long %>%
+  filter(metric == "Score") %>%
+  select(tool_dmr_combination, tumor_seq_combination, value) %>%
+  pivot_wider(names_from = tumor_seq_combination, values_from = value) %>%
+  column_to_rownames("tool_dmr_combination") %>%
+  as.matrix()
+cfrrbs_score_mat <- cfrrbs_score_mat[, desired_order]
+```
+
+```{r}
+# Compute row means of the Score matrix
+score_means <- rowMeans(rrbs_score_mat, na.rm = TRUE)
+
+# Order the row names based on descending Score (you can use decreasing = FALSE for ascending)
+ordered_rows <- names(sort(score_means, decreasing = TRUE))
+
+# Reorder all matrices by the ordered row names
+cfrrbs_score_mat <- cfrrbs_score_mat[ordered_rows, ]
+cfrrbs_auc_mat   <- cfrrbs_auc_mat[ordered_rows, ]
+cfrrbs_rmse_mat  <- cfrrbs_rmse_mat[ordered_rows, ]
+cfrrbs_scc_mat   <- cfrrbs_scc_mat[ordered_rows, ]
+```
+
+```{r}
+seq_depth <- rep(c("2M", "5M", "10M", "15M", "20M"), 1)
+tumors    <- rep(c("NBL"), each = 5)
+
+col_anno <- HeatmapAnnotation(
+  SeqDepth = seq_depth,
+  Tumor    = tumors,
+  col = list(
+    SeqDepth = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF"),
+    Tumor = c("NBL"="#ff7f0e")
+  ),
+  show_annotation_name = FALSE
+)
+
+# Define heatmap settings shared across all plots
+common_opts <- list(
+  cluster_rows = FALSE,
+  cluster_columns = FALSE,
+  column_names_rot = 45,
+  show_row_dend = TRUE,
+  show_column_names = FALSE,
+  show_column_dend = FALSE,
+  top_annotation = col_anno,
+  column_labels = tumors
+)
+
+# Put all matrices and their titles/names in a list
+heatmap_data <- list(
+  AUC         = cfrrbs_auc_mat,
+  RMSE        = cfrrbs_rmse_mat,
+  SCC         = cfrrbs_scc_mat,
+  Score       = cfrrbs_score_mat
+)
+
+# Generate heatmaps with do.call
+heatmaps <- lapply(names(heatmap_data), function(name) {
+  do.call(Heatmap, c(
+    list(
+      matrix = heatmap_data[[name]],
+      name = name,
+      column_title = name
+    ),
+    common_opts
+  ))
+})
+draw(Reduce(`+`, heatmaps))
+```
+
+```{r eval=FALSE, include=FALSE}
+# Create the main directory to save the plots
+output_dir <- paste0(dir_path, "plots/comprehensive_heatamaps")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+# Combine and draw
+pdf(paste0(dir_path,"plots/comprehensive_heatamaps/cfrrbs_heatmap.pdf"), width = 12, height = 6)
+draw(Reduce(`+`, heatmaps))
+dev.off()
+```
