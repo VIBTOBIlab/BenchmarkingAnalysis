@@ -1,7 +1,8 @@
 ---
-title: "01. Tutorial on general benchmarking results and plots"
+title: "01. Tutorial to generate comprehensive heatmaps to show results on all combinations"
 output: html_document
-date: "2024-10-31"
+date: "2025-09-23"
+author: "Edoardo Giuili"
 ---
 
 ## Introduction
@@ -488,7 +489,7 @@ draw(Reduce(`+`, heatmaps))
 output_dir <- paste0(dir_path, "plots/comprehensive_heatamaps")
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
-# Combine and draw
+# Save
 pdf(paste0(dir_path,"plots/comprehensive_heatamaps/rrbs_heatmap.pdf"), width = 12, height = 6)
 draw(Reduce(`+`, heatmaps))
 dev.off()

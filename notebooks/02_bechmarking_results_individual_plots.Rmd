@@ -1,0 +1,341 @@
+---
+title: "02. Tutorial on how to generate the Limit of Detection (LoD) of the tools"
+output: html_document
+date: "2025-09-23"
+author: "Edoardo Giuili"
+---
+
+## Introduction
+
+In this tutorial we want to show how to compute the LoD of each tool, across the different combinations, being tumor types, sequencing depth and DMR tools.
+
+### Setting up the environment
+
+First, set up the main directory chaning the paths below
+
+```{r setup}
+knitr::opts_knit$set(root.dir = '~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/')
+# Define the directory containing the CSV files
+dir_path <- "~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/"
+```
+
+Import the necessary libraries for the analysis
+
+```{r message=FALSE, warning=FALSE}
+library(ggpubr)
+library(dplyr)
+library(tidyverse)
+library(circlize)
+library(ComplexHeatmap)
+```
+
+Import the useful functions
+
+```{r}
+source("R/compute_lod.R")
+```
+
+
+Now, we will import all the results generated and described above. Note that here we expect that you have git cloned the repository and thus have the expected folder structure where in the folder resources/ there are the results files.
+
+```{r}
+df_raw <- read.csv(paste0(dir_path,"resources/final_benchmarking_dataset.csv"))
+bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico") %>%
+  filter(!is.na(predicted_tf))
+```
+
+### Limit of Detection (LoD)
+
+The tumoral limit of detection (LoD) in the context of cellular deconvolution tools refers to the lowest tumor fraction in a sample at which a deconvolution method can reliably distinguish and quantify tumor-derived signals from background noise.
+
+It is typically determined by assessing the performance of the tool across a range of tumor fractions (e.g., 1%, 5%, 10%) and identifying the minimum proportion at which tumor-derived cell types can be consistently detected.
+
+We will investigate and compute the LoD by the statistical significance of a one-sided Mann-Whitney U-test between the estimated tumor fractions of the samples at every dilution level (e.g. 1%, 5% etc) and the control samples (0% tumor fraction).
+
+
+```{r warning=FALSE}
+# Define the comparisons and an empty dataframe to store the results
+my_comparisons <- list(
+  c("0", "1e-04"), 
+  c("0", "0.001"), 
+  c("0", "0.003"), 
+  c("0", "0.007"),
+  c("0", "0.01"),
+  c("0", "0.025"),
+  c("0", "0.05"),
+  c("0", "0.1"),
+  c("0", "0.25"),
+  c("0", "0.5")
+)
+all.stats <- data.frame()
+
+# Loop over the type of tumors
+for (type in unique(bench.res$tumor_type)) {
+  
+  # Loop over sequencing depths
+  filt_tum <- subset(bench.res, bench.res$tumor_type == type)
+  for (seqdepth in unique(filt_tum$seq_depth)) {
+    
+    # Loop over the DMR tools    
+    filt_depth <- subset(filt_tum, filt_tum$seq_depth == seqdepth)
+    for (dmrtool in unique(filt_depth$dmr_tool)) {
+      
+      # Loop over the deconvolution tools
+      filt_dmr <- subset(filt_depth, filt_depth$dmr_tool == dmrtool)
+      for (deconv in unique(filt_depth$deconv_tool)) {
+        
+        # Filter over the deconvolution tool and run the statistical test to find the LoD
+        filt_df <- subset(filt_dmr, filt_dmr$deconv_tool == deconv)
+        stats <- compute_lod(filt_df, my_comparisons, correction.method = "BH")
+
+        lod <- stats %>%
+          arrange(as.numeric(group2)) %>%
+          filter(as.numeric(p.adj) < 0.01) %>%
+          slice(1) %>%
+          pull(group2)
+            
+        # If lod is empty or NA, assign 1
+        if (length(lod) == 0 || is.na(lod)) {
+          lod <- 1
+        }
+        
+        # Concatenate the results into the dataframe
+        tmp <- data.frame(deconv_tool = deconv, dmr_tool = dmrtool, tumor_type = type, seq_depth = seqdepth, lod = lod, stringsAsFactors = F)
+        all.stats <- rbind(all.stats, tmp)
+      }
+    }
+  }
+}
+```
+
+
+Now we can compute the ranking based on the LoD: the lower the LoD the lower (better) the ranking. In case of a tie, we take the minimum ranking for both tools.
+
+```{r}
+all.stats <- all.stats %>%
+  mutate(lod = as.numeric(lod)) %>%
+  group_by(dmr_tool, tumor_type, seq_depth) %>%
+  mutate(
+    rank_raw = rank(lod, ties.method = "min")
+  )
+```
+
+## Plot the results
+
+### Plot the results on WGBS
+
+We can now plot the results in an separate heatmap for each dataset. We will start with the WGBS dataset. To obtain a unique LoD per deconvolution tool at each sequencing depth, we take the median LoD across tumor types.
+
+```{r}
+lod_tools_aggr_wgbs <- all.stats %>%
+  filter(tumor_type %in% c("BRCA","BLCA","LUAD","LUSC")) %>%
+  group_by(deconv_tool, seq_depth) %>%
+  summarise(LoD = mean(lod))
+```
+
+
+```{r}
+# Define the exact order you want
+col_order <- c("62M", "183M", "310M", "620M")
+row_order_wgbs <- c("CelFiE", "UXM", "EpiDISH_CP_ineq", "EpiDISH_CP_eq", "MetDecode",
+                    "meth_atlas", "PRMeth", "EpiSCORE", "EpiDISH_RPC", "CIBERSORT")
+
+# Build the matrix
+mat_wgbs <- lod_tools_aggr_wgbs %>%
+  pivot_wider(
+    names_from = seq_depth,
+    values_from = LoD
+  ) %>%
+  column_to_rownames(var = "deconv_tool") %>% 
+  select(all_of(col_order))
+mat_wgbs <- mat_wgbs[row_order_wgbs, ]
+
+# Define the palette
+col_fun <- colorRamp2(
+  c(0.0001, 0.001, 0.003, 0.007, max(mat_wgbs)),
+  c("#67000d", "#cb181d", "#ef3b2c", "#fb6a4a", "#FAEBDDFF")
+)
+
+# Make the annotation df
+ha_wgbs <- HeatmapAnnotation(
+  Depth    = col_order,
+  col = list(
+    Depth = c("62M"="#FAEBDDFF","183M"="#F69C73FF","310M"="#A11A5BFF","620M"="#03051AFF")
+  )
+)
+```
+
+
+```{r}
+p <- Heatmap(mat_wgbs,
+        name = "Limit of Detection",
+        col = col_fun,
+        cluster_rows = F,
+        top_annotation = ha_wgbs,
+        show_column_names = T,
+        cluster_columns = F,
+        column_labels = col_order,
+        column_names_side = "top",
+        row_names_gp = gpar(fontsize = 12),
+        column_names_gp = gpar(fontsize = 12),
+        column_names_rot = 0, 
+        column_names_centered = T)
+p
+```
+
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- paste0(dir_path, "plots/lod_heatmaps")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+# Save to PDF
+pdf(paste0(output_dir,"/heatmap_lod_wgbs.pdf"), width = 6, height = 5)
+draw(p)
+dev.off()
+```
+
+
+### Plot the results on RRBS
+
+We will now plot the results for RRBS following the same approach as for WGBS.
+
+```{r}
+lod_tools_aggr_rrbs <- all.stats %>%
+  filter(tumor_type %in% c("CRC", "PC", "LC")) %>%
+  group_by(deconv_tool, seq_depth) %>%
+  summarise(LoD = mean(lod))
+```
+
+
+```{r}
+# Define the exact order you want
+col_order <- c("2M", "5M", "10M", "15M", "20M")
+row_order_rrbs <- c("CelFiE", "EpiDISH_CP_ineq", "EpiDISH_CP_eq", 
+                    "meth_atlas", "PRMeth", "MetDecode","EpiDISH_RPC", "EpiSCORE","CIBERSORT", "UXM")
+
+# Build the matrix
+mat_rrbs <- lod_tools_aggr_rrbs %>%
+  pivot_wider(
+    names_from = seq_depth,
+    values_from = LoD
+  ) %>%
+  column_to_rownames(var = "deconv_tool") %>% 
+  select(all_of(col_order))
+mat_rrbs <- mat_rrbs[row_order_rrbs, ]
+
+# Define the palette
+col_fun <- colorRamp2(
+  c(0.0001, 0.001, 0.003, 0.007, max(mat_rrbs)),
+  c("#67000d", "#cb181d", "#ef3b2c", "#fb6a4a", "#FAEBDDFF")
+)
+
+# Make the annotation df
+ha_rrbs <- HeatmapAnnotation(
+  Depth    = col_order,
+  col = list(
+    Depth = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF")
+  )
+)
+```
+
+
+```{r}
+p <- Heatmap(mat_rrbs,
+        name = "Limit of Detection",
+        col = col_fun,
+        cluster_rows = F,
+        top_annotation = ha_rrbs,
+        show_column_names = T,
+        cluster_columns = F,
+        column_labels = col_order,
+        column_names_side = "top",
+        row_names_gp = gpar(fontsize = 12),
+        column_names_gp = gpar(fontsize = 12),
+        column_names_rot = 0, 
+        column_names_centered = T)
+p
+```
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- paste0(dir_path, "plots/lod_heatmaps")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+# Save to PDF
+pdf(paste0(output_dir,"/heatmap_lod_rrbs.pdf"), width = 6, height = 5)
+draw(p)
+dev.off()
+```
+
+### Plot the results on cfRRBS
+
+We will now plot the results for cfRRBS following the same approach as for WGBS.
+
+```{r}
+lod_tools_aggr_cfrrbs <- all.stats %>%
+  filter(tumor_type %in% c("NBL")) %>%
+  group_by(deconv_tool, seq_depth) %>%
+  summarise(LoD = mean(lod))
+```
+
+
+```{r}
+# Define the exact order you want
+col_order <- c("2M", "5M", "10M", "15M", "20M")
+row_order_cfrrbs <- c("CelFiE", "MetDecode", "EpiDISH_CP_ineq", "EpiDISH_CP_eq", 
+                    "meth_atlas", "PRMeth", "EpiDISH_RPC", "EpiSCORE","CIBERSORT", "UXM")
+
+# Build the matrix
+mat_cfrrbs <- lod_tools_aggr_cfrrbs %>%
+  pivot_wider(
+    names_from = seq_depth,
+    values_from = LoD
+  ) %>%
+  column_to_rownames(var = "deconv_tool") %>% 
+  select(all_of(col_order))
+mat_cfrrbs <- mat_cfrrbs[row_order_cfrrbs, ]
+
+# Define the palette
+col_fun <- colorRamp2(
+  c(0.0001, 0.001, 0.003, 0.007, max(mat_rrbs)),
+  c("#67000d", "#cb181d", "#ef3b2c", "#fb6a4a", "#FAEBDDFF")
+)
+
+# Make the annotation df
+ha_rrbs <- HeatmapAnnotation(
+  Depth    = col_order,
+  col = list(
+    Depth = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF")
+  )
+)
+```
+
+
+```{r}
+p <- Heatmap(mat_cfrrbs,
+        name = "Limit of Detection",
+        col = col_fun,
+        cluster_rows = F,
+        top_annotation = ha_rrbs,
+        show_column_names = T,
+        cluster_columns = F,
+        column_labels = col_order,
+        column_names_side = "top",
+        row_names_gp = gpar(fontsize = 12),
+        column_names_gp = gpar(fontsize = 12),
+        column_names_rot = 0, 
+        column_names_centered = T)
+p
+```
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- paste0(dir_path, "plots/lod_heatmaps")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+# Save to PDF
+pdf(paste0(output_dir,"/heatmap_lod_cfrrbs.pdf"), width = 6, height = 5)
+draw(p)
+dev.off()
+```
