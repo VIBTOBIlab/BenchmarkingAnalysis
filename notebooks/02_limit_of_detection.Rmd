@@ -118,6 +118,7 @@ all.stats <- all.stats %>%
   mutate(
     rank_raw = rank(lod, ties.method = "min")
   )
+#write.csv(all.stats, paste0(dir_path,"/resources/lod_allstats.csv"))
 ```
 
 ## Plot the results

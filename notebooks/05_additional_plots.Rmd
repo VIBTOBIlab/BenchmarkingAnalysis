@@ -1,0 +1,481 @@
+---
+title: '05. Additional plots'
+author: "Edoardo Giuili"
+date: "2025-09-24"
+output: html_document
+---
+
+## Introduction
+
+In this tutorial we will analyse the WGBS and RRBS and generate several different visualizations used in the benchmarking to interpret the data.
+
+### Benchmarking metrics
+
+It is important to highlight that to evaluate the performance of the deconvolution tools we considered 3 different key metrics: the root-mean-squared error (RMSE), the area under the curve (AUC-ROC) and the Spearman's rank correlation coefficient (ρ {\displaystyle \rho }). To create an overall bench.resmarking score against which to compare the deconvolution tools, we min-max scaled the metrics and computed the mean of the three metrics to obtain the overall score for each combination. Since RMSE is computed on a proportion of all the samples (specifically, only the samples with tumoral fraction \> 0% --\> 0.87), it will be weighted by this percentage.
+
+### Setting up the environment
+
+First, set up the main directory chaning the paths below
+
+```{r setup}
+knitr::opts_knit$set(root.dir = '~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/')
+# Define the directory containing the CSV files
+dir_path <- "~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/"
+```
+
+Import the necessary libraries for the analysis
+
+```{r message=FALSE, warning=FALSE}
+library(Metrics)
+library(ggpubr)
+library(dplyr)
+library(tidyverse)
+library(stringr)
+library(pROC)
+```
+
+Import the useful functions and the metrics
+
+```{r}
+source("R/compute_auc.R")
+
+# RMSE
+rmse <- function(actual, predicted) {
+  round(sqrt(mean((actual - predicted)^2)),4)
+}
+# Normalized RMSE (NRMSE)
+nrmse <- function(actual, predicted) {
+    round(sqrt(mean((actual - predicted))^2)/mean(actual+10e-8),4)
+}
+# Spearman's rank correlation coefficient (SCC)
+scc <- function(actual, predicted) {
+  cor(actual, predicted, method = "spearman", use = "pairwise.complete.obs")
+}
+```
+
+Now, we will import all the results generated and described above. Note that here we expect that you have git cloned the repository and thus have the expected folder structure where in the folder resources/ there are the results files.
+
+```{r}
+df_raw <- read.csv(paste0(dir_path,"resources/final_benchmarking_dataset.csv"))
+bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico")
+```
+
+### Missing values
+
+An important aspect to take into consideration is the number of missing values per tool.
+
+```{r}
+missing_percentage <- bench.res %>%
+     group_by(deconv_tool) %>%
+     summarise(
+         total = n(),
+         missing = sum(is.na(predicted_tf)),
+         percent_missing = 100 * missing / total
+     )
+missing_percentage
+```
+
+Since the presence of missing values is very low (meaning that all the tools almost always produce an output), we will just remove them without penalizing the tools that produced missing values or imputing them.
+
+```{r}
+# Remove rows with NA values for further analysis 
+bench.res <- bench.res %>%
+  filter(!is.na(predicted_tf))
+```
+
+
+## Compute the metrics
+
+For more information about the metrics, please refer to the (first notebook)["01_heatmaps_all_combinationts.Rmd"]. First, compute the RMSE.
+
+```{r}
+rmse_minmax <- bench.res %>%
+  filter(expected_tf != 0) %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type, expected_tf) %>%
+  mutate(RMSE = rmse(expected_tf, predicted_tf)) %>%
+  ungroup() %>%
+  group_by(dmr_tool, seq_depth, tumor_type, expected_tf) %>%
+  mutate(
+    RMSE_min = min(RMSE),
+    RMSE_max = max(RMSE),
+    RMSE_minmax = (RMSE - RMSE_min) / (RMSE_max - RMSE_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(RMSE = 1-mean(RMSE_minmax), .groups = "drop")
+```
+
+Then we compute the AUC for each tool.
+
+```{r}
+# Create a new dataset dataframe where to store AUC-ROC results
+aucroc_data <- data.frame()
+# Select the samples with tumoral fractions > 0%
+unique_fractions <- unique(bench.res$expected_tf)
+unique_fractions <- subset(unique_fractions, unique_fractions != 0)
+
+# Loop over the type of tumors
+for (type in unique(bench.res$tumor_type)) {
+  
+  # Loop over sequencing depths
+  filt_tum <- subset(bench.res, bench.res$tumor_type == type)
+  for (seqdepth in unique(filt_tum$seq_depth)) {
+    
+    # Loop over the DMR tools    
+    filt_depth <- subset(filt_tum, filt_tum$seq_depth == seqdepth)
+    for (dmrtool in unique(filt_depth$dmr_tool)) {
+      
+      # Loop over the deconvolution tools
+      for (deconv in unique(filt_depth$deconv_tool)) {
+  
+        # Loop over the tumoral fractions specified above
+        for (fraction in unique_fractions) {
+          filt_df <- filt_depth %>%
+            filter(expected_tf %in% c(0,fraction) & 
+                   dmr_tool == dmrtool &
+                   deconv_tool == deconv)
+
+          # Compute the AUC-ROC score per combination and concatanate it to the final dataframe
+          auc_single_combination <- compute_auc(filt_df, fraction, deconv)
+          aucroc_data <- rbind(aucroc_data, auc_single_combination)
+        }
+      }
+    }
+  }
+}
+auc_minmax <- aucroc_data %>%
+    group_by(deconv_tool, dmr_tool, seq_depth, tumor_type, expected_tf) %>%
+    summarize(AUC=mean(auc),.groups = "drop") %>%
+    group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+    summarize(AUC=mean(AUC),.groups = "drop")
+```
+
+Finally, we compute the SCC.
+
+```{r}
+# Compute the metrics: modify the RMSE= 1) nrmse 2) rmse 3) rmse of logit(values)
+scc_minmax <- bench.res %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(SCC = cor(expected_tf, predicted_tf, method = "spearman"), .groups = "drop")
+```
+
+Now we can merge the metrics together into a unique dataframe and normalize them. Then, aggregate them into an overall Score.
+
+```{r}
+# Merge the dataset
+merged_metrics <- rmse_minmax %>%
+  left_join(scc_minmax) %>%
+  left_join(auc_minmax)
+
+# Compute the number of zeros and non-zero observations
+num.zeros <- nrow(bench.res[bench.res$expected_tf==0,])
+num.nonzeros <- nrow(bench.res[bench.res$expected_tf!=0,])
+
+# Compute the total number of observation
+tot <- num.nonzeros + num.zeros
+
+# Min-max scale the metrics across the tools
+norm_merged_metrics <- merged_metrics %>% 
+  group_by(dmr_tool, seq_depth, tumor_type) %>%
+  mutate(normSCC  = ( SCC - min(SCC)     ) / ( max(SCC)  - min(SCC)  ),
+         normAUC  = ( AUC - min(AUC)     ) / ( max(AUC)  - min(AUC)  ),
+         normRMSE = ( (RMSE) - min(RMSE) ) / ( max(RMSE) - min(RMSE) ), 
+         Score    = normSCC + normAUC + ( num.nonzeros/tot)*normRMSE )
+
+# Normalize the Score
+norm_merged_metrics <- norm_merged_metrics %>%
+  group_by(dmr_tool, seq_depth, tumor_type) %>%
+  mutate(normScore = ( Score - min(Score) ) / ( max(Score) - min(Score) ) )
+```
+
+
+## Plot the results using different visualizations
+
+### Plot general ranking of the tools based on RMSE, SCC, AUC and overall Score
+
+Plot min-max scaled metrics for all the datasets
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- paste0(dir_path,"plots/05_additional_plots/rankings_per_dataset/")
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+# Plot the ranking per dataset
+for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
+      
+      # Define the tumor types per dataset
+      if (dataset == "WGBS") { 
+        tum_types <- c("BRCA","LUAD","LUSC","BLCA") }
+  
+      else if (dataset == "RRBS") { 
+        tum_types <- c("CRC","PC","LC") }
+  
+      else { tum_types <- c("NBL") }
+
+      # Aggregate across seq depths and tumors and compute the mean Score
+      df <- norm_merged_metrics %>% 
+        filter(tumor_type %in% tum_types) %>%
+        group_by(deconv_tool, dmr_tool, tumor_type) %>%
+        summarise(Score = mean(normScore),
+                  AUC   = mean(normAUC)  ,
+                  RMSE  = mean(normRMSE) ,
+                  SCC   = mean(normSCC)  ,
+                  .groups = "drop") %>%
+        group_by(deconv_tool, dmr_tool) %>%
+        summarise(Score = mean(Score),
+                  AUC   = mean(AUC)  ,
+                  RMSE  = mean(RMSE) ,
+                  SCC   = mean(SCC)  ,
+                  .groups = "drop")
+      
+      for (metric in c("Score", "AUC", "SCC", "RMSE")) {
+        
+        # Rank the tools by mean Score across DMR tools
+        mean_score <- df %>%
+          group_by(deconv_tool) %>%
+          summarise(Mean = mean(.data[[metric]]), .groups = 'drop') %>%
+          arrange(Mean)
+          
+        # Reorder 'deconv_tool' factor levels globally
+        df <- df %>%
+          mutate(deconv_tool = factor(deconv_tool, levels = mean_score$deconv_tool))
+          
+        p <- ggplot(df, aes(y = deconv_tool, .data[[metric]], color = dmr_tool, shape = dmr_tool)) +
+            geom_point(size = 3, alpha = 0.8) +
+            labs(
+                title = paste0(metric," in ", dataset),
+                x = metric,
+                y = ""
+            ) +
+            theme_classic() +
+            theme(
+                axis.text.x = element_text(angle = 45, hjust = 1),
+                panel.grid.major.y = element_line(color = "grey90"),
+                panel.grid.minor.y = element_line(color = "grey90")
+            ) +
+            scale_color_manual(values=c("limma"="#F8766D","wgbstools"="#00BA38","DMRfinder"="#619CFF"))
+  
+        # Save the plot as an image
+        output_file <- file.path(output_dir, paste0(metric,"_",dataset,".svg"))
+        ggsave(output_file, plot = p, width = 8, height = 6)
+      }
+}
+```
+
+
+### Plot ranking distribution per metric used
+
+Here, we want to visualize how many times a tool is found in a given ranking position across all combinations. We will basically plot the ranking distribution of the tools per metric adopted.
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- paste0(dir_path,"plots/05_additional_plots/ranking_distributions")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
+      
+  # Define the tumor types per dataset
+  if (dataset == "WGBS") { 
+    tum_types <- c("BRCA","LUAD","LUSC","BLCA") }
+  
+  else if (dataset == "RRBS") { 
+    tum_types <- c("CRC","PC","LC") }
+
+  else { tum_types <- c("NBL") }
+
+  for (metric in c("normAUC", "normRMSE", "normSCC", "normScore")) {
+    
+    # Rank the data
+    data_ranked <- norm_merged_metrics %>%
+      filter(tumor_type %in% tum_types) %>%
+      group_by(dmr_tool, tumor_type, seq_depth) %>%
+      mutate(Rank = rank(-!!sym(metric), ties.method = "min")) %>%
+      ungroup()
+
+    # Compute rank counts
+    rank_counts <- data_ranked %>%
+      group_by(deconv_tool, Rank) %>%
+      summarise(Count = n(), .groups = 'drop')
+    
+    # Compute Weighted Score: Sum of (Count * Weight) to order the tools
+    weighted_scores <- rank_counts %>%
+      mutate(Weight = 1 / Rank,
+             Weighted = Count * Weight) %>%
+      group_by(deconv_tool) %>%
+      summarise(Weighted_Score = sum(Weighted),
+                .groups = 'drop')
+    
+    # Order tools based on Weighted Score (higher is better)
+    order_tools <- weighted_scores %>%
+      arrange(Weighted_Score) %>%
+      pull(deconv_tool)
+    
+    # Set factor levels for plotting
+    rank_counts$deconv_tool <- factor(rank_counts$deconv_tool, levels = order_tools)
+  
+    # Plotting
+    p <- ggplot(rank_counts, aes(x = Rank, y = deconv_tool, size = Count)) +
+      geom_point(color = "#3670A0", alpha = 0.8) +
+      scale_size_continuous(range = c(3,10)) +
+      labs(title = paste("Rank distribution based on", metric),
+           x = "Rank (lower = better)",
+           y = "Deconvolution Tool",
+           size = "Count") +
+      theme_classic(base_size = 14) +  # Clean white theme
+      theme(
+        panel.background = element_rect(fill = "white", color = NA),
+        plot.background = element_rect(fill = "white", color = NA),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+      ) +
+      scale_x_continuous(breaks = seq(1, max(rank_counts$Rank))) +
+      ylab("")
+    
+    # Save the plot as an image
+    output_file <- file.path(output_dir, paste0("ranking_distribution_",metric,"_",dataset,".svg"))
+    ggsave(output_file, plot = p, width = 8, height = 6)
+  }
+}
+```
+
+### Plot ranking distribution of the LoD
+
+We can now plot the ranking distribution for the LoD as well. For more information on how we computed the LoDs of the tools, you can go over the (second notebook)[02_limit_of_detection.Rmd].
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- paste0(dir_path,"plots/05_additional_plots/ranking_distributions")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+# Import the results generated in 02_ notebook
+all.stats <- read.csv(paste0(dir_path,"/resources/lod_allstats.csv"))
+
+for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
+      
+  # Define the tumor types per dataset
+  if (dataset == "WGBS") { 
+    tum_types <- c("BRCA","LUAD","LUSC","BLCA") }
+  
+  else if (dataset == "RRBS") { 
+    tum_types <- c("CRC","PC","LC") }
+
+  else { tum_types <- c("NBL") }
+  
+  # Compute rank counts
+  rank_counts <- all.stats %>%
+    filter(tumor_type %in% tum_types) %>%
+    group_by(deconv_tool, rank_raw) %>%
+    summarise(Count = n(), .groups = 'drop')
+  
+  # Compute Weighted Score: Sum of (Count * Weight)
+  weighted_scores <- rank_counts %>%
+    mutate(Weight = 1 / rank_raw,
+           Weighted = Count * Weight) %>%
+    group_by(deconv_tool) %>%
+    summarise(Weighted_Score = sum(Weighted),
+              .groups = 'drop')
+  
+  # Order tools based on Weighted Score (higher is better)
+  order_tools <- weighted_scores %>%
+    arrange(Weighted_Score) %>%
+    pull(deconv_tool)
+  
+  # Set factor levels for plotting
+  rank_counts$deconv_tool <- factor(rank_counts$deconv_tool, levels = order_tools)
+  
+  # Plotting
+  p <- ggplot(rank_counts, aes(x = rank_raw, y = deconv_tool, size = Count)) +
+    geom_point(color = "#3670A0", alpha = 0.8) +
+    scale_color_gradient() +
+    scale_size_continuous(range = c(3,10)) +
+    labs(title = paste("Ranking distribution based on LoD"),
+         x = "Rank (lower = better)",
+         y = "Deconvolution Tool",
+         size = "Count") +
+    theme_classic(base_size = 14) +  # Clean white theme
+    theme(
+      panel.background = element_rect(fill = "white", color = NA),
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    ) +
+    guides(color = "none") +
+    scale_x_continuous(breaks = seq(1, max(rank_counts$rank_raw))) +
+    ylab("")
+  
+  # Save the plot as an image
+  output_file <- file.path(output_dir, paste0("ranking_distribution_LoD_",dataset,".svg"))
+  ggsave(output_file, plot = p, width = 8, height = 6)
+}
+```
+
+
+### Ranking dot plots for AUC-ROC score
+
+We can now rank the tools based on the AUC-ROC score. We will use the raw score in this case, since we don not want to include it in combined scores.
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- paste0(dir_path,"plots/05_additional_plots/dotplots_rank_AUC")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
+      
+  # Define the tumor types per dataset
+  if (dataset == "WGBS") { 
+    tum_types <- c("BRCA","LUAD","LUSC","BLCA") }
+  
+  else if (dataset == "RRBS") { 
+    tum_types <- c("CRC","PC","LC") }
+
+  else { tum_types <- c("NBL") }
+  
+  df <- norm_merged_metrics %>% 
+          filter(tumor_type %in% tum_types) %>%
+          group_by(deconv_tool, seq_depth) %>%
+          summarise(AUC = median(AUC))
+  
+  # Order the seq depths and assign the correct color palette
+  if (dataset == "WGBS") {
+    df$seq_depth <- factor(df$seq_depth, levels = c("62M", "183M", "310M", "620M"))
+    option = "rocket" }
+  else { 
+    df$seq_depth <- factor(df$seq_depth, levels = c("2M", "5M", "10M", "15M", "20M"))
+    option = "viridis"}
+  
+  # Order the tools by highest AUC
+  tool_order <- df %>%
+    group_by(deconv_tool) %>%
+    summarise(mean_AUC = mean(AUC)) %>%
+    arrange(mean_AUC) %>%
+    pull(deconv_tool)
+
+  df <- df %>%
+    mutate(deconv_tool = factor(deconv_tool, levels = tool_order))
+
+  # Dotplot of the tools AUC score
+  p <- ggplot(df, aes(y = deconv_tool, x = AUC, fill = seq_depth)) +
+        geom_point(size = 3, alpha = 0.8, color = "black", shape = 21) +
+        labs(
+            title = paste0(dataset, " dataset"),
+            x = "AUC",
+            y = ""
+        ) +
+        theme_classic() +
+        theme(
+              panel.grid.major.y = element_line(color = "grey90"),
+              panel.grid.minor.y = element_line(color = "grey90")) +
+        scale_fill_viridis_d(option = option, direction = -1)
+            
+  # Save the plot as an image
+  output_file <- file.path(output_dir, paste0("rank_AUC_",dataset,".svg"))
+  ggsave(output_file, plot = p, width = 8, height = 6)
+}
+```
+
+
+
+
+
+
+
+

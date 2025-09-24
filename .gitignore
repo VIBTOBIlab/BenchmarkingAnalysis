@@ -1,3 +1,4 @@
 plots/
 tutorials/
 .DS_Store
+*/.RData

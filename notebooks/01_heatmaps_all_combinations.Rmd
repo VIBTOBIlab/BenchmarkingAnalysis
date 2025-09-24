@@ -72,7 +72,7 @@ missing_percentage <- bench.res %>%
          total = n(),
          missing = sum(is.na(predicted_tf)),
          percent_missing = 100 * missing / total
-     ) 
+     )
 missing_percentage
 ```
 
