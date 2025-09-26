@@ -344,7 +344,7 @@ draw(Reduce(`+`, heatmaps))
 
 ```{r}
 # Create the main directory to save the plots
-output_dir <- paste0(dir_path, "plots/comprehensive_heatamaps")
+output_dir <- paste0(dir_path, "plots/01_comprehensive_heatmaps")
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 # Combine and draw
@@ -486,7 +486,7 @@ draw(Reduce(`+`, heatmaps))
 
 ```{r eval=FALSE, include=FALSE}
 # Create the main directory to save the plots
-output_dir <- paste0(dir_path, "plots/comprehensive_heatamaps")
+output_dir <- paste0(dir_path, "plots/01_comprehensive_heatmaps")
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 # Save
@@ -625,7 +625,7 @@ draw(Reduce(`+`, heatmaps))
 
 ```{r eval=FALSE, include=FALSE}
 # Create the main directory to save the plots
-output_dir <- paste0(dir_path, "plots/comprehensive_heatamaps")
+output_dir <- paste0(dir_path, "plots/01_comprehensive_heatmaps")
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 # Combine and draw
