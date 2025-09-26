@@ -153,7 +153,7 @@ mat_wgbs <- mat_wgbs[row_order_wgbs, ]
 
 # Define the palette
 col_fun <- colorRamp2(
-  c(0.0001, 0.001, 0.003, 0.007, max(mat_wgbs)),
+  c(0.0001, 0.007, 0.01, 0.05, max(mat_wgbs)),
   c("#67000d", "#cb181d", "#ef3b2c", "#fb6a4a", "#FAEBDDFF")
 )
 
@@ -227,7 +227,7 @@ mat_rrbs <- mat_rrbs[row_order_rrbs, ]
 
 # Define the palette
 col_fun <- colorRamp2(
-  c(0.0001, 0.001, 0.003, 0.007, max(mat_rrbs)),
+  c(0.0001, 0.007, 0.01, 0.05, max(mat_rrbs)),
   c("#67000d", "#cb181d", "#ef3b2c", "#fb6a4a", "#FAEBDDFF")
 )
 
