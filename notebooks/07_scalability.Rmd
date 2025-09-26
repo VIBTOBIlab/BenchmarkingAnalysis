@@ -1,0 +1,239 @@
+---
+title: "Tools scalability"
+author: "Edoardo Giuili"
+date: "2025-09-26"
+output: html_document
+---
+
+## Introduction
+
+In this tutorial we will go over the scalability results in terms of running time and memory usage. To compute the scalability of the tools we used the following strategy. We selected 5, 25, 50 and 100 in silico mixtures from the NBL cfRRBS dataset and we run each tool using sequentially 25, 50, 100, 250 and 500 DMRs. Second, we extracted the memory peak and the real time computed automatically by the Nextflow pipeline for each individual deconvolution tool. We run this analysis allocating to each deconvolution tool 8 CPUs and 16GB of memory, the minimum required resources to run the pipeline.
+
+### Setting up the environment
+
+First, set up the main directory chaning the paths below
+
+```{r setup}
+knitr::opts_knit$set(root.dir = '~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/')
+# Define the directory containing the CSV files
+dir_path <- "~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/"
+```
+
+Import the necessary libraries for the analysis
+
+```{r message=FALSE, warning=FALSE}
+library(ggpubr)
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+library(stringr)
+```
+
+Import the results
+
+```{r}
+res.scal <- read.csv(paste0(dir_path,"resources/scalability.clean.csv"))
+```
+
+
+## Plot the results
+
+### Boxplots of memory and realtime
+
+We can plot the running time and memory distribution among the different combinations using boxplots. We first have to convert the memory and running time into the correct format.
+
+```{r}
+# Helper function to convert memory to MB
+convert_mem <- function(x) {
+  x <- str_trim(x)
+  val <- as.numeric(str_extract(x, "[0-9.]+"))
+  unit <- str_extract(x, "MB|GB")
+  ifelse(unit == "GB", val * 1024, val)
+}
+
+convert_time <- function(x) {
+  x <- tolower(trimws(x))
+  total <- numeric(length(x))
+
+  for (i in seq_along(x)) {
+    str <- x[i]
+    sec <- as.numeric(stringr::str_extract(str, "\\d+\\.?\\d*(?=s)"))
+    min <- as.numeric(stringr::str_extract(str, "\\d+\\.?\\d*(?=m(?!s))")) # avoid matching ms
+    ms  <- as.numeric(stringr::str_extract(str, "\\d+\\.?\\d*(?=ms)"))
+
+    sec[is.na(sec)] <- 0
+    min[is.na(min)] <- 0
+    ms[is.na(ms)]   <- 0
+
+    total[i] <- min * 60 + sec + ms / 1000
+  }
+
+  return(total)
+}
+```
+
+
+```{r}
+# Apply conversions to memory
+data_clean_memory <- res.scal %>%
+  mutate(
+    realtime_sec = convert_mem(peak_rss)
+  )
+# Calculate median duration per method and sort
+order_memory <- data_clean_memory %>%
+  group_by(name) %>%
+  summarise(med = mean(realtime_sec, na.rm = TRUE)) %>%
+  arrange(med) %>%
+  pull(name)
+# Set factor levels for duration plot
+data_clean_memory$name <- factor(data_clean_memory$name, levels = order_memory)
+
+# Repeat for the time
+data_clean_time <- res.scal %>%
+  mutate(
+    realtime_sec = convert_time(realtime)
+  )
+order_time <- data_clean_time %>%
+  group_by(name) %>%
+  summarise(med = median(realtime_sec, na.rm = TRUE)) %>%
+  arrange(med) %>%
+  pull(name)
+data_clean_time$name <- factor(data_clean_time$name, levels = order_time)
+```
+
+And now plot the results combined
+
+```{r}
+# Plot: Boxplot of duration
+p1 <- ggplot(data_clean_time, aes(x = name, y = realtime_sec)) +
+  geom_boxplot() +
+  labs(title = "", x = "", y = "Real time (seconds)") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(breaks = seq(0,110,by=20))
+
+
+# Plot: Boxplot of peak RSS
+p2 <- ggplot(data_clean_memory, aes(x = name, y = peak_rss_mb)) +
+  geom_boxplot() +
+  labs(title = "", x = "", y = "Memory usage (MB)") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Show plots
+combined.plot <- p1 + p2
+combined.plot
+```
+
+```{r}
+output_dir <- paste0(dir_path,"plots/07_scalability")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+output_file <- file.path(output_dir, paste0("memory_time_boxplots_8CPU_16GB.svg"))
+ggsave(output_file, combined.plot, width = 8, height = 5)
+```
+
+
+### Compare the memory at different number of DMRs and samples
+
+We can also check how the memory changes increasing the number of DMRs and samples.
+
+```{r}
+# Summarize by mean or median
+summary_df_dmr <- data_clean_memory %>%
+  group_by(name, dmr) %>%
+  summarise(mean_rss = mean(peak_rss_mb), .groups = "drop")
+summary_df_samples <- data_clean_memory %>%
+  group_by(name, samples) %>%
+  summarise(mean_rss = mean(peak_rss_mb), .groups = "drop")
+
+p1 <- ggplot(summary_df_dmr, aes(x = dmr, y = mean_rss, color = name)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "",
+       x = "Number of DMRs", y = "Memory usage (MB)") +
+  theme_classic() +
+  theme(legend.position = "none") +
+  scale_x_continuous(breaks = c(25, 100, 250, 500)) +
+  ylim(0,800)
+
+p2 <- ggplot(summary_df_samples, aes(x = samples, y = mean_rss, color = name)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "",
+       x = "Number of samples", y = "") +
+  theme_classic() +
+  scale_x_continuous(breaks = c(5, 20, 50, 100)) +
+  ylim(0,800)
+
+# Show plots
+combined.plot <- p1 + p2
+combined.plot
+```
+
+
+```{r}
+output_dir <- paste0(dir_path,"plots/07_scalability")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+output_file <- file.path(output_dir, paste0("memory_samples_dmrs_8CPU_16GB.svg"))
+ggsave(output_file, combined.plot, width = 8, height = 4)
+```
+
+
+### Compare the real time at different number of DMRs and samples
+
+And we can visualize the same for the running time
+
+```{r}
+# Summarize by mean or median
+summary_df_dmr <- data_clean_time %>%
+  group_by(name, dmr) %>%
+  summarise(mean_time = mean(realtime_sec), .groups = "drop")
+summary_df_samples <- data_clean_time %>%
+  group_by(name, samples) %>%
+  summarise(mean_time = mean(realtime_sec), .groups = "drop")
+
+p1 <- ggplot(summary_df_dmr, aes(x = dmr, y = mean_time, color = name)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "",
+       x = "Number of DMRs", y = "Real time (seconds)") +
+  theme_classic() +
+  theme(legend.position = "none") +
+  scale_x_continuous(breaks = c(25, 100, 250, 500)) +
+  scale_y_continuous(breaks = seq(0,70,by=10)) + 
+  ylim(0,30)
+
+p2 <- ggplot(summary_df_samples, aes(x = samples, y = mean_time, color = name)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "",
+       x = "Number of samples", y = "") +
+  theme_classic() +
+  scale_x_continuous(breaks = c(5, 20, 50, 100)) + 
+  scale_y_continuous(breaks = seq(0,70,by=10)) +
+  ylim(0,30)
+
+# Show plots
+combined.plot <- p1 + p2
+combined.plot
+```
+
+
+
+```{r}
+output_dir <- paste0(dir_path,"plots/07_scalability")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+output_file <- file.path(output_dir, paste0("time_samples_dmrs_8CPU_16GB.svg"))
+ggsave(output_file, combined.plot, width = 8, height = 4)
+```
+
+
+
+
+
+
+
+

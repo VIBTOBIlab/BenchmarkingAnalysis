@@ -1,0 +1,1032 @@
+---
+title: "06. Funkyheatmap and final ranking"
+author: "Edoardo Giuili"
+date: "2025-09-26"
+output: html_document
+---
+
+## Introduction
+
+In this tutorial we will plot the funkyheatmap published in the paper, where we summarized the performance of the tools across metrics, DMR tools, sequencing depth, scalability and overall ranking.
+
+### Benchmarking metrics
+
+It is important to highlight that to evaluate the performance of the deconvolution tools we considered 3 different key metrics: the root-mean-squared error (RMSE), the area under the curve (AUC-ROC) and the Spearman's rank correlation coefficient (ρ {\displaystyle \rho }). To create an overall benchmarking score against which to compare the deconvolution tools, we min-max scaled the metrics and computed the mean of the three metrics to obtain the overall score for each combination. Since RMSE is computed on a proportion of all the samples (specifically, only the samples with tumoral fraction \> 0% --\> 0.87), it will be weighted by this percentage.
+
+### Setting up the environment
+
+First, set up the main directory chaning the paths below
+
+```{r setup}
+knitr::opts_knit$set(root.dir = '~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/')
+# Define the directory containing the CSV files
+dir_path <- "~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/"
+```
+
+Import the necessary libraries for the analysis
+
+```{r message=FALSE, warning=FALSE}
+library(Metrics)
+library(ggpubr)
+library(dplyr)
+library(tidyr)
+library(funkyheatmap)
+library(stringr)
+library(pROC)
+```
+
+Import the useful functions and the metrics
+
+```{r}
+source("R/compute_auc.R")
+
+# RMSE
+rmse <- function(actual, predicted) {
+  round(sqrt(mean((actual - predicted)^2)),4)
+}
+# Normalized RMSE (NRMSE)
+nrmse <- function(actual, predicted) {
+    round(sqrt(mean((actual - predicted))^2)/mean(actual+10e-8),4)
+}
+# Spearman's rank correlation coefficient (SCC)
+scc <- function(actual, predicted) {
+  cor(actual, predicted, method = "spearman", use = "pairwise.complete.obs")
+}
+```
+
+Now, we will import all the results generated. Note that here we expect that you have git cloned the repository and thus have the expected folder structure where in the folder resources/ there are the results files.
+
+
+```{r}
+# Read the dataset and remove the na values
+df <- read.csv(paste0(dir_path,"resources/final_benchmarking_dataset.csv"))
+bench <- subset(df, !(is.na(predicted_tf)))
+
+# Divide the dataframe into each different dataset
+in_silico_wgbs <- subset(bench, bench$seq_method == "wgbs")
+in_silico_rrbs <- subset(bench, bench$seq_method == "rrbs")
+in_silico_cfrrbs <- subset(bench, bench$seq_method == "cfrrbs" & bench$mixture_type == "in_silico")
+in_vitro_cfrrbs <- subset(bench, bench$mixture_type == "in_vitro" & !grepl("-subsamp", bench$sample) & bench$deconv_tool!= "Methyl_Resolver" & bench$expected_tf < 0.6)
+```
+
+
+## Generate the metrics per dataset
+
+### WGBS
+
+Compute the AUC values per tumoral fraction, then make the mean to have a mean AUC, then compute the min-max sclaed AUC across tools at each seq_depth, DMR tools and tumor_type.
+
+
+```{r}
+# Create a new dataset dataframe where to store AUC-ROC results
+aucroc_data <- data.frame()
+# Select the samples with tumoral fractions > 0%
+unique_fractions <- unique(in_silico_wgbs$expected_tf)
+unique_fractions <- subset(unique_fractions, unique_fractions != 0)
+
+# Loop over the type of tumors
+for (type in unique(in_silico_wgbs$tumor_type)) {
+  
+  # Loop over sequencing depths
+  filt_tum <- subset(in_silico_wgbs, in_silico_wgbs$tumor_type == type)
+  for (seqdepth in unique(filt_tum$seq_depth)) {
+    
+    # Loop over the DMR tools    
+    filt_depth <- subset(filt_tum, filt_tum$seq_depth == seqdepth)
+    for (dmrtool in unique(filt_depth$dmr_tool)) {
+      
+      # Loop over the deconvolution tools
+      for (deconv in unique(filt_depth$deconv_tool)) {
+  
+        # Loop over the tumoral fractions specified above
+        for (fraction in unique_fractions) {
+          filt_df <- filt_depth %>%
+            filter(expected_tf %in% c(0,fraction) & 
+                   dmr_tool == dmrtool &
+                   deconv_tool == deconv)
+
+          # Compute the AUC-ROC score per combination and concatanate it to the final dataframe
+          auc_single_combination <- compute_auc(filt_df, fraction, deconv)
+          aucroc_data <- rbind(aucroc_data, auc_single_combination)
+        }
+      }
+    }
+  }
+}
+auc_wgbs <- aucroc_data %>%
+    group_by(deconv_tool, dmr_tool, seq_depth, tumor_type, expected_tf) %>%
+    summarize(AUC=mean(auc),.groups = "drop") %>%
+    group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+    summarize(meanAUC=mean(AUC),.groups = "drop")  %>%
+    group_by(dmr_tool, seq_depth, tumor_type) %>%
+    mutate(
+      AUC_min = min(meanAUC),
+      AUC_max = max(meanAUC),
+      AUC_minmax = (meanAUC - AUC_min) / (AUC_max - AUC_min)
+    ) %>%
+    group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+    summarise(AUC = AUC_minmax, .groups = "drop")
+```
+
+Now, we compute the SCC. The SCC is computed for each combination pooling all the observed tumor fractions together to get a value for each combination. The SCC is then min-max scaled.
+
+```{r}
+# Compute the metrics: modify the RMSE= 1) nrmse 2) rmse 3) rmse of logit(values)
+scc_wgbs <- in_silico_wgbs %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(SCC = cor(expected_tf, predicted_tf, method = "spearman"), .groups = "drop") %>%
+  ungroup() %>%
+  group_by(dmr_tool, seq_depth, tumor_type) %>%
+  mutate(
+    SCC_min = min(SCC),
+    SCC_max = max(SCC),
+    SCC_minmax = (SCC - SCC_min) / (SCC_max - SCC_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(SCC = SCC_minmax, .groups = "drop")
+```
+
+Finally compute the RMSE.
+
+```{r}
+rmse_wgbs <- in_silico_wgbs %>%
+  filter(expected_tf != 0) %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type, expected_tf) %>%
+  mutate(RMSE = rmse(expected_tf, predicted_tf)) %>%
+  ungroup() %>%
+  group_by(dmr_tool, seq_depth, tumor_type, expected_tf) %>%
+  mutate(
+    RMSE_min = min(RMSE),
+    RMSE_max = max(RMSE),
+    RMSE_minmax = (RMSE - RMSE_min) / (RMSE_max - RMSE_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(RMSE = 1-mean(RMSE_minmax), .groups = "drop")
+```
+
+We can now combined the metrics into a unique, overall Score
+
+```{r}
+# Compute the number of zeros and non-zero observations
+num.zeros <- nrow(in_silico_wgbs[in_silico_wgbs$expected_tf==0,])
+num.nonzeros <- nrow(in_silico_wgbs[in_silico_wgbs$expected_tf!=0,])
+
+# Compute the total number of observation
+tot <- num.nonzeros + num.zeros
+
+# Compute the Score
+score_wgbs <- rmse_wgbs[,c("deconv_tool","dmr_tool","seq_depth","tumor_type")] 
+score_wgbs$Score <- ( num.nonzeros/tot)*rmse_wgbs$RMSE + scc_wgbs$SCC + auc_wgbs$AUC
+score_wgbs <- score_wgbs %>%
+  group_by(dmr_tool,tumor_type,seq_depth) %>%
+    mutate(
+    Score_min = min(Score),
+    Score_max = max(Score),
+    Score_minmax = (Score - Score_min) / (Score_max - Score_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, tumor_type,seq_depth) %>%
+  summarise(Score = Score_minmax, .groups = "drop")
+```
+
+
+### RRBS
+
+Now we will do the same for the RRBS dataset.
+
+```{r}
+# Create a new dataset dataframe where to store AUC-ROC results
+aucroc_data <- data.frame()
+# Select the samples with tumoral fractions > 0%
+unique_fractions <- unique(in_silico_rrbs$expected_tf)
+unique_fractions <- subset(unique_fractions, unique_fractions != 0)
+
+# Loop over the type of tumors
+for (type in unique(in_silico_rrbs$tumor_type)) {
+  
+  # Loop over sequencing depths
+  filt_tum <- subset(in_silico_rrbs, in_silico_rrbs$tumor_type == type)
+  for (seqdepth in unique(filt_tum$seq_depth)) {
+    
+    # Loop over the DMR tools    
+    filt_depth <- subset(filt_tum, filt_tum$seq_depth == seqdepth)
+    for (dmrtool in unique(filt_depth$dmr_tool)) {
+      
+      # Loop over the deconvolution tools
+      for (deconv in unique(filt_depth$deconv_tool)) {
+  
+        # Loop over the tumoral fractions specified above
+        for (fraction in unique_fractions) {
+          filt_df <- filt_depth %>%
+            filter(expected_tf %in% c(0,fraction) & 
+                   dmr_tool == dmrtool &
+                   deconv_tool == deconv)
+
+          # Compute the AUC-ROC score per combination and concatanate it to the final dataframe
+          auc_single_combination <- compute_auc(filt_df, fraction, deconv)
+          aucroc_data <- rbind(aucroc_data, auc_single_combination)
+        }
+      }
+    }
+  }
+}
+auc_rrbs <- aucroc_data %>%
+    group_by(deconv_tool, dmr_tool, seq_depth, tumor_type, expected_tf) %>%
+    summarize(AUC=mean(auc),.groups = "drop") %>%
+    group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+    summarize(meanAUC=mean(AUC),.groups = "drop")  %>%
+    group_by(dmr_tool, seq_depth, tumor_type) %>%
+    mutate(
+      AUC_min = min(meanAUC),
+      AUC_max = max(meanAUC),
+      AUC_minmax = (meanAUC - AUC_min) / (AUC_max - AUC_min)
+    ) %>%
+    group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+    summarise(AUC = AUC_minmax, .groups = "drop")
+```
+
+Now, we compute the SCC. The SCC is computed for each combination pooling all the observed tumor fractions together to get a value for each combination. The SCC is then min-max scaled.
+
+```{r}
+# Compute the metrics: modify the RMSE= 1) nrmse 2) rmse 3) rmse of logit(values)
+scc_rrbs <- in_silico_rrbs %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(SCC = cor(expected_tf, predicted_tf, method = "spearman"), .groups = "drop") %>%
+  ungroup() %>%
+  group_by(dmr_tool, seq_depth, tumor_type) %>%
+  mutate(
+    SCC_min = min(SCC),
+    SCC_max = max(SCC),
+    SCC_minmax = (SCC - SCC_min) / (SCC_max - SCC_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(SCC = SCC_minmax, .groups = "drop")
+```
+
+Finally compute the RMSE.
+
+```{r}
+rmse_rrbs <- in_silico_rrbs %>%
+  filter(expected_tf != 0) %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type, expected_tf) %>%
+  mutate(RMSE = rmse(expected_tf, predicted_tf)) %>%
+  ungroup() %>%
+  group_by(dmr_tool, seq_depth, tumor_type, expected_tf) %>%
+  mutate(
+    RMSE_min = min(RMSE),
+    RMSE_max = max(RMSE),
+    RMSE_minmax = (RMSE - RMSE_min) / (RMSE_max - RMSE_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(RMSE = 1-mean(RMSE_minmax), .groups = "drop")
+```
+
+We can now combined the metrics into a unique, overall Score
+
+```{r}
+# Compute the number of zeros and non-zero observations
+num.zeros <- nrow(in_silico_rrbs[in_silico_rrbs$expected_tf==0,])
+num.nonzeros <- nrow(in_silico_rrbs[in_silico_rrbs$expected_tf!=0,])
+
+# Compute the total number of observation
+tot <- num.nonzeros + num.zeros
+
+# Compute the Score
+score_rrbs <- rmse_rrbs[,c("deconv_tool","dmr_tool","seq_depth","tumor_type")] 
+score_rrbs$Score <- ( num.nonzeros/tot)*rmse_rrbs$RMSE + scc_rrbs$SCC + auc_rrbs$AUC
+score_rrbs <- score_rrbs %>%
+  group_by(dmr_tool, tumor_type, seq_depth) %>%
+    mutate(
+    Score_min = min(Score),
+    Score_max = max(Score),
+    Score_minmax = (Score - Score_min) / (Score_max - Score_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, tumor_type,seq_depth) %>%
+  summarise(Score = Score_minmax, .groups = "drop")
+```
+
+### cfRRBS in silico
+
+And for the cfRRBS in silico and in vitro
+
+```{r}
+# Create a new dataset dataframe where to store AUC-ROC results
+aucroc_data <- data.frame()
+# Select the samples with tumoral fractions > 0%
+unique_fractions <- unique(in_silico_cfrrbs$expected_tf)
+unique_fractions <- subset(unique_fractions, unique_fractions != 0)
+
+# Loop over the type of tumors
+for (type in unique(in_silico_cfrrbs$tumor_type)) {
+  
+  # Loop over sequencing depths
+  filt_tum <- subset(in_silico_cfrrbs, in_silico_cfrrbs$tumor_type == type)
+  for (seqdepth in unique(filt_tum$seq_depth)) {
+    
+    # Loop over the DMR tools    
+    filt_depth <- subset(filt_tum, filt_tum$seq_depth == seqdepth)
+    for (dmrtool in unique(filt_depth$dmr_tool)) {
+      
+      # Loop over the deconvolution tools
+      for (deconv in unique(filt_depth$deconv_tool)) {
+  
+        # Loop over the tumoral fractions specified above
+        for (fraction in unique_fractions) {
+          filt_df <- filt_depth %>%
+            filter(expected_tf %in% c(0,fraction) & 
+                   dmr_tool == dmrtool &
+                   deconv_tool == deconv)
+
+          # Compute the AUC-ROC score per combination and concatanate it to the final dataframe
+          auc_single_combination <- compute_auc(filt_df, fraction, deconv)
+          aucroc_data <- rbind(aucroc_data, auc_single_combination)
+        }
+      }
+    }
+  }
+}
+auc_cfrrbs <- aucroc_data %>%
+    group_by(deconv_tool, dmr_tool, seq_depth, tumor_type, expected_tf) %>%
+    summarize(AUC=mean(auc),.groups = "drop") %>%
+    group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+    summarize(meanAUC=mean(AUC),.groups = "drop")  %>%
+    group_by(dmr_tool, seq_depth, tumor_type) %>%
+    mutate(
+      AUC_min = min(meanAUC),
+      AUC_max = max(meanAUC),
+      AUC_minmax = (meanAUC - AUC_min) / (AUC_max - AUC_min)
+    ) %>%
+    group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+    summarise(AUC = AUC_minmax, .groups = "drop")
+```
+
+Now, we compute the SCC. The SCC is computed for each combination pooling all the observed tumor fractions together to get a value for each combination. The SCC is then min-max scaled.
+
+```{r}
+# Compute the metrics: modify the RMSE= 1) nrmse 2) rmse 3) rmse of logit(values)
+scc_cfrrbs <- in_silico_cfrrbs %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(SCC = cor(expected_tf, predicted_tf, method = "spearman"), .groups = "drop") %>%
+  ungroup() %>%
+  group_by(dmr_tool, seq_depth, tumor_type) %>%
+  mutate(
+    SCC_min = min(SCC),
+    SCC_max = max(SCC),
+    SCC_minmax = (SCC - SCC_min) / (SCC_max - SCC_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(SCC = SCC_minmax, .groups = "drop")
+```
+
+Finally compute the RMSE.
+
+```{r}
+rmse_cfrrbs <- in_silico_cfrrbs %>%
+  filter(expected_tf != 0) %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type, expected_tf) %>%
+  mutate(RMSE = rmse(expected_tf, predicted_tf)) %>%
+  ungroup() %>%
+  group_by(dmr_tool, seq_depth, tumor_type, expected_tf) %>%
+  mutate(
+    RMSE_min = min(RMSE),
+    RMSE_max = max(RMSE),
+    RMSE_minmax = (RMSE - RMSE_min) / (RMSE_max - RMSE_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(RMSE = 1-mean(RMSE_minmax), .groups = "drop")
+```
+
+We can now combined the metrics into a unique, overall Score
+
+```{r}
+# Compute the number of zeros and non-zero observations
+num.zeros <- nrow(in_silico_wgbs[in_silico_cfrrbs$expected_tf==0,])
+num.nonzeros <- nrow(in_silico_wgbs[in_silico_cfrrbs$expected_tf!=0,])
+
+# Compute the total number of observation
+tot <- num.nonzeros + num.zeros
+
+# Compute the Score
+score_cfrrbs <- rmse_cfrrbs[,c("deconv_tool","dmr_tool","seq_depth","tumor_type")] 
+score_cfrrbs$Score <- ( num.nonzeros/tot)*rmse_cfrrbs$RMSE + scc_cfrrbs$SCC + auc_cfrrbs$AUC
+score_cfrrbs <- score_cfrrbs %>%
+  group_by(dmr_tool,tumor_type,seq_depth) %>%
+    mutate(
+    Score_min = min(Score),
+    Score_max = max(Score),
+    Score_minmax = (Score - Score_min) / (Score_max - Score_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, tumor_type,seq_depth) %>%
+  summarise(Score = Score_minmax, .groups = "drop")
+```
+
+### cfRRBS in vitro
+
+Compute the AUC values per tumoral fraction, then make the make to have a mean AUC, then compute the min-max sclaed AUC across tools at each seq_depth, DMR tools and tumor_type.
+
+
+```{r message=FALSE, warning=FALSE}
+aucroc_data <- data.frame()
+# Select the samples with tumoral fractions > 0%
+unique_fractions <- unique(in_vitro_cfrrbs$expected_tf)
+unique_fractions <- subset(unique_fractions, unique_fractions != 0)
+
+# Loop over the type of tumors
+for (type in unique(in_vitro_cfrrbs$tumor_type)) {
+  
+  # Loop over sequencing depths
+  filt_tum <- subset(in_vitro_cfrrbs, in_vitro_cfrrbs$tumor_type == type)
+  for (dmrtool in unique(filt_tum$dmr_tool)) {
+      
+    # Loop over the deconvolution tools
+    for (deconv in unique(filt_tum$deconv_tool)) {
+  
+      # Loop over the tumoral fractions specified above
+      for (fraction in unique_fractions) {
+        
+        filt_df <- filt_tum %>%
+          filter(expected_tf %in% c(0,fraction) & 
+                 dmr_tool == dmrtool &
+                 deconv_tool == deconv)
+
+        # Compute the AUC-ROC score per combination and concatanate it to the final dataframe
+        auc_single_combination <- compute_auc(filt_df, fraction, deconv)
+        aucroc_data <- rbind(aucroc_data, auc_single_combination)
+      }
+    }
+  }
+}
+auc_cfrrbs_invitro <- aucroc_data %>%
+    group_by(deconv_tool, dmr_tool, tumor_type, expected_tf) %>%
+    summarize(AUC=mean(auc),.groups = "drop") %>%
+    group_by(deconv_tool, dmr_tool, tumor_type) %>%
+    summarize(meanAUC=mean(AUC),.groups = "drop")  %>%
+    group_by(dmr_tool, tumor_type) %>%
+    mutate(
+      AUC_min = min(meanAUC),
+      AUC_max = max(meanAUC),
+      AUC_minmax = (meanAUC - AUC_min) / (AUC_max - AUC_min)
+    ) %>%
+    group_by(deconv_tool, dmr_tool, tumor_type) %>%
+    summarise(AUC = AUC_minmax, .groups = "drop")
+
+```
+
+
+```{r}
+# Compute the metrics: modify the RMSE= 1) nrmse 2) rmse 3) rmse of logit(values)
+scc_cfrrbs_invitro <- in_vitro_cfrrbs %>%
+  group_by(deconv_tool, dmr_tool, tumor_type) %>%
+  summarise(SCC = cor(expected_tf, predicted_tf, method = "spearman"), .groups = "drop") %>%
+  ungroup() %>%
+  group_by(dmr_tool, tumor_type) %>%
+  mutate(
+    SCC_min = min(SCC),
+    SCC_max = max(SCC),
+    SCC_minmax = (SCC - SCC_min) / (SCC_max - SCC_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, tumor_type) %>%
+  summarise(SCC = mean(SCC_minmax), .groups = "drop")
+```
+
+
+```{r}
+rmse_cfrrbs_invitro <- in_vitro_cfrrbs %>%
+  filter(expected_tf != 0) %>%
+  group_by(deconv_tool, dmr_tool, tumor_type, expected_tf) %>%
+  mutate(RMSE = rmse(expected_tf, predicted_tf)) %>%
+  ungroup() %>%
+  group_by(dmr_tool, tumor_type, expected_tf) %>%
+  mutate(
+    RMSE_min = min(RMSE),
+    RMSE_max = max(RMSE),
+    RMSE_minmax = (RMSE - RMSE_min) / (RMSE_max - RMSE_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, tumor_type) %>%
+  summarise(RMSE = 1-mean(RMSE_minmax), .groups = "drop")
+```
+
+
+```{r}
+# Compute the number of zeros and non-zero observations
+num.zeros <- nrow(in_vitro_cfrrbs[in_vitro_cfrrbs$expected_tf==0,])
+num.nonzeros <- nrow(in_vitro_cfrrbs[in_vitro_cfrrbs$expected_tf!=0,])
+
+# Compute the total number of observation
+tot <- num.nonzeros + num.zeros
+
+# Compute the Score
+score_cfrrbs_invitro <- rmse_cfrrbs_invitro[,c("deconv_tool","dmr_tool","tumor_type")] 
+score_cfrrbs_invitro$Score <- ( num.nonzeros/tot)*rmse_cfrrbs_invitro$RMSE + scc_cfrrbs_invitro$SCC + auc_cfrrbs_invitro$AUC
+score_cfrrbs_invitro <- score_cfrrbs_invitro %>%
+  group_by(dmr_tool,tumor_type) %>%
+    mutate(
+    Score_min = min(Score),
+    Score_max = max(Score),
+    Score_minmax = (Score - Score_min) / (Score_max - Score_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, tumor_type) %>%
+  summarise(Score = Score_minmax, .groups = "drop")
+```
+
+
+## Aggregate the metrics
+
+We will now aggregate the metrics of the datasets according to different variables. We will aggregate per metric to have an overall per metric performance. We will also aggregate per DMR tool, per sequencing depth and per dataset. We will give a different weigth to each dataset to balance the difference in terms of sequencing technology. Since there is only 1 WGBS dataset and 3 RRBS-like datasets, we will give the weight of 1 to the WGBS, 0.5 to the RRBS and 0.25 to both the in-silico and in-vitro cfRRBS dataset.
+
+### Aggregate per metric
+
+Here we will calculate the mean RMSE per deconvolution tool per dataset and then aggregate the mean RMSE using the weighted mean.
+
+```{r}
+# Compute the mean RMSE for WGBS
+aggr_rmse_wgbs <- rmse_wgbs %>%
+  group_by(deconv_tool) %>%
+  summarise(RMSE = mean(RMSE))
+aggr_rmse_wgbs$weight <- 1
+
+# For RRBS
+aggr_rmse_rrbs <- rmse_rrbs %>%
+  group_by(deconv_tool) %>%
+  summarise(RMSE = mean(RMSE))
+aggr_rmse_rrbs$weight <- 0.5
+
+# For in-silico cfRRBS
+aggr_rmse_cfrrbs <- rmse_cfrrbs %>%
+  group_by(deconv_tool) %>%
+  summarise(RMSE = mean(RMSE))
+aggr_rmse_cfrrbs$weight <- 0.25
+
+# For in-vitro cfRRBS
+aggr_rmse_cfrrbs_invitro <- rmse_cfrrbs_invitro %>%
+  group_by(deconv_tool) %>%
+  summarise(RMSE = mean(RMSE))
+aggr_rmse_cfrrbs_invitro$weight <- 0.25
+
+# Concatanate the dataframes into 1 
+aggr_rmse <- bind_rows(
+  aggr_rmse_wgbs,
+  aggr_rmse_rrbs,
+  aggr_rmse_cfrrbs,
+  aggr_rmse_cfrrbs_invitro
+)
+
+# Compute the weighted mean
+funkyheat_permetric_rmse <- aggr_rmse %>%
+  group_by(deconv_tool) %>%
+  summarise(RMSE = weighted.mean(RMSE, w = weight)) %>%
+  arrange(desc(RMSE))
+
+```
+
+
+Do the same for the SCC
+
+```{r}
+# Compute the mean SCC for WGBS
+aggr_scc_wgbs <- scc_wgbs %>%
+  group_by(deconv_tool) %>%
+  summarise(SCC = mean(SCC))
+aggr_scc_wgbs$weight <- 1
+
+# RRBS
+aggr_scc_rrbs <- scc_rrbs %>%
+  group_by(deconv_tool) %>%
+  summarise(SCC = mean(SCC))
+aggr_scc_rrbs$weight <- 0.5
+
+# in-silico cfRRBS
+aggr_scc_cfrrbs <- scc_cfrrbs %>%
+  group_by(deconv_tool) %>%
+  summarise(SCC = mean(SCC))
+aggr_scc_cfrrbs$weight <- 0.25
+
+# in-vitro cfRRBS
+aggr_scc_cfrrbs_invitro <- scc_cfrrbs_invitro %>%
+  group_by(deconv_tool) %>%
+  summarise(SCC = mean(SCC))
+aggr_scc_cfrrbs_invitro$weight <- 0.25
+
+# Concatanate
+aggr_scc <- bind_rows(
+  aggr_scc_wgbs,
+  aggr_scc_rrbs,
+  aggr_scc_cfrrbs,
+  aggr_scc_cfrrbs_invitro
+)
+
+# Weighted mean
+funkyheat_permetric_scc <- aggr_scc %>%
+  group_by(deconv_tool) %>%
+  summarise(SCC = weighted.mean(SCC, w = weight)) %>%
+  arrange(desc(SCC))
+```
+
+
+And the same for the AUC-ROC score
+
+```{r}
+# Compute the mean AUC-ROC score for WGBS
+aggr_auc_wgbs <- auc_wgbs %>%
+  group_by(deconv_tool) %>%
+  summarise(AUC = mean(AUC))
+aggr_auc_wgbs$weight <- 1
+
+# RRBS
+aggr_auc_rrbs <- auc_rrbs %>%
+  group_by(deconv_tool) %>%
+  summarise(AUC = mean(AUC))
+aggr_auc_rrbs$weight <- 0.5
+
+# in-silico cfRRBS
+aggr_auc_cfrrbs <- auc_cfrrbs %>%
+  group_by(deconv_tool) %>%
+  summarise(AUC = mean(AUC))
+aggr_auc_cfrrbs$weight <- 0.25
+
+# in-vitro cfRRBS
+aggr_auc_cfrrbs_invitro <- auc_cfrrbs_invitro %>%
+  group_by(deconv_tool) %>%
+  summarise(AUC = mean(AUC))
+aggr_auc_cfrrbs_invitro$weight <- 0.25
+
+# Concatanate
+aggr_auc <- bind_rows(
+  aggr_auc_wgbs,
+  aggr_auc_rrbs,
+  aggr_auc_cfrrbs,
+  aggr_auc_cfrrbs_invitro
+)
+
+# Weighted mean
+funkyheat_permetric_auc <- aggr_auc %>%
+  group_by(deconv_tool) %>%
+  summarise(AUC = weighted.mean(AUC, w = weight)) %>%
+  arrange(desc(AUC))
+```
+
+
+### Aggregate per DMRtool
+
+We will now do the same as above, but aggregating per DMR tool. In this case, we will use the overall Score as a metric of performance for the aggregation per DMR tool.
+
+```{r}
+# Compute the mean Score for WGBS
+aggr_score_wgbs <- score_wgbs %>%
+  group_by(deconv_tool,dmr_tool) %>%
+  summarise(Score = mean(Score)) %>%
+  pivot_wider(
+    names_from = dmr_tool,
+    values_from = Score
+  )
+aggr_score_wgbs$weight <- 1
+
+# RRBS
+aggr_score_rrbs <- score_rrbs %>%
+  group_by(deconv_tool,dmr_tool) %>%
+  summarise(Score = mean(Score)) %>%
+  pivot_wider(
+    names_from = dmr_tool,
+    values_from = Score
+  )
+aggr_score_rrbs$weight <- 0.5
+
+# in-silico cfRRBS
+aggr_score_cfrrbs <- score_cfrrbs %>%
+  group_by(deconv_tool,dmr_tool) %>%
+  summarise(Score = mean(Score)) %>%
+  pivot_wider(
+    names_from = dmr_tool,
+    values_from = Score
+  )
+aggr_score_cfrrbs$weight <- 0.25
+
+# in-vitro cfRRBS
+aggr_score_cfrrbs_invitro <- score_cfrrbs_invitro %>%
+  group_by(deconv_tool,dmr_tool) %>%
+  summarise(Score = mean(Score)) %>%
+  pivot_wider(
+    names_from = dmr_tool,
+    values_from = Score
+  )
+aggr_score_cfrrbs_invitro$weight <- 0.25
+
+# Concatanate
+aggr_score <- bind_rows(
+  aggr_score_wgbs,
+  aggr_score_rrbs,
+  aggr_score_cfrrbs,
+  aggr_score_cfrrbs_invitro
+)
+
+# Weighted mean
+funkyheat_perdmrtool_score <- aggr_score %>%
+  group_by(deconv_tool) %>%
+  summarise(DMRfinder = weighted.mean(DMRfinder, w = weight),
+            limma = weighted.mean(limma, w = weight),
+            wgbstools = weighted.mean(wgbstools, w = weight)) %>%
+  arrange(desc(wgbstools))
+```
+
+
+### Aggregate per dataset
+
+We can now aggregate per dataset, again using the overall Score.
+
+```{r}
+# Compute the mean Score for WGBS
+aggr_score_wgbs <- score_wgbs %>%
+  group_by(deconv_tool) %>%
+  summarise(WGBS = mean(Score))
+
+# RRBS
+aggr_score_rrbs <- score_rrbs %>%
+  group_by(deconv_tool) %>%
+  summarise(RRBS = mean(Score))
+
+# cfRRBS in silico
+aggr_score_cfrrbs <- score_cfrrbs %>%
+  group_by(deconv_tool) %>%
+  summarise(cfRRBS_insilico = mean(Score))
+
+# cfRRBS in vitro
+aggr_score_cfrrbs_invitro <- score_cfrrbs_invitro %>%
+  group_by(deconv_tool) %>%
+  summarise(cfRRBS_invitro = mean(Score))
+
+# Concatanate
+funkyheat_perdataset_score <- aggr_score_wgbs %>%
+  inner_join(aggr_score_rrbs, by = "deconv_tool") %>%
+  inner_join(aggr_score_cfrrbs, by = "deconv_tool") %>%
+  inner_join(aggr_score_cfrrbs_invitro, by = "deconv_tool")
+
+```
+
+
+### Aggregate per dataset per seq_depth
+
+Now we will aggregate per sequencing depth. Since WGBS and RRBS have different sequencing depths, we will aggregate within each dataset
+
+```{r}
+# Compute the mean Score for WGBS seq depth
+aggr_score_perseqdepth_wgbs <- score_wgbs %>%
+  group_by(deconv_tool, seq_depth) %>%
+  summarise(WGBS = mean(Score)) %>%
+  pivot_wider(
+    names_from = seq_depth,
+    values_from = WGBS,
+    names_glue = "WGBS_{seq_depth}"
+  )
+
+# RRBS
+aggr_score_perseqdepth_rrbs <- score_rrbs %>%
+  group_by(deconv_tool, seq_depth) %>%
+  summarise(RRBS = mean(Score)) %>%
+  pivot_wider(
+    names_from = seq_depth,
+    values_from = RRBS,
+    names_glue = "RRBS_{seq_depth}"
+  )
+
+# cfRRBS in silico
+aggr_score_perseqdepth_cfrrbs <- score_cfrrbs %>%
+  group_by(deconv_tool, seq_depth) %>%
+  summarise(cfRRBS_insilico = mean(Score)) %>%
+  pivot_wider(
+    names_from = seq_depth,
+    values_from = cfRRBS_insilico,
+    names_glue = "cfRRBS_{seq_depth}"
+  )
+
+# cfRRBS in vitro
+funkyheat_perdataset_perseqdepth_score <- aggr_score_perseqdepth_wgbs %>%
+  inner_join(aggr_score_perseqdepth_rrbs, by = "deconv_tool") %>%
+  inner_join(aggr_score_perseqdepth_cfrrbs, by = "deconv_tool")
+```
+
+### Scalability
+
+An important aspect in the evaluation of deconvolution tools is the scalability computed as the mean of the running time score and memory usage score. Since the scalability difference between the deconvolution tools is not that strong, we will give a low weigth (0.1) when we will aggregate it with the other scores to get the final overall Score.
+
+```{r}
+# Read the dataset and subset the useful columns
+scalability.df <- read.csv(paste0(dir_path, "resources/scalability.clean.csv"), row.names = 1)
+scalability.df <- scalability.df[,c("name","dmr","samples","realtime_sec","peak_rss_mb")]
+names(scalability.df)[1] <- "deconv_tool"
+
+# Change the deconvolution tools names with the appropriate ones
+scalability.df <- scalability.df %>%
+  mutate(deconv_tool = recode(deconv_tool,
+                       "CELFIE" = "CelFiE",
+                       "EPIDISH_RPC" = "EpiDISH_RPC",
+                       "EPIDISH_eq" = "EpiDISH_CP_eq",
+                       "EPIDISH_ineq" = "EpiDISH_CP_ineq",
+                       "EPISCORE" = "EpiSCORE",
+                       "METDECODE" = "MetDecode",
+                       "METH_ATLAS" = "meth_atlas",
+                       "PRMETH" = "PRMeth"))
+
+# Compute the mean running time and memory usage across the different combinations
+average_runtime <- scalability.df %>%
+  group_by(deconv_tool) %>%
+  summarise(Runtime = round(mean(realtime_sec),2))  %>%
+  arrange(Runtime)
+average_memory <- scalability.df %>%
+  group_by(deconv_tool) %>%
+  summarise(Memory = round(mean(peak_rss_mb),0))  %>%
+  arrange(Memory)
+
+# Min-max scale both running time and memory
+scalability_memory <- data.frame(
+  deconv_tool = average_memory$deconv_tool,
+  Memory = 1 - ( average_memory$Memory - min(average_memory$Memory) ) / ( max(average_memory$Memory) - min(average_memory$Memory) ) )
+scalability_time <- data.frame(
+  deconv_tool = average_runtime$deconv_tool,
+  Time = 1 - ( average_runtime$Runtime - min(average_runtime$Runtime) ) / ( max(average_runtime$Runtime) - min(average_runtime$Runtime) ) )
+
+# Concatanate the datasets and make a mean score
+aggr_scalab_score = merge(scalability_memory, scalability_time, by = "deconv_tool")
+aggr_scalab_score$Score = (aggr_scalab_score$Memory + aggr_scalab_score$Time) / 2
+aggr_scalab_score <- aggr_scalab_score[, c("deconv_tool","Score")]
+```
+
+## Compute overall score
+
+We can finally compute the overall Score across the different datasets, including the scalability Score.
+
+```{r}
+# WGBS
+overall_wgbs_score <- score_wgbs %>%
+  group_by(deconv_tool) %>%
+  summarise(Score = mean(Score))
+
+# RRBS
+overall_rrbs_score <- score_rrbs %>%
+  group_by(deconv_tool) %>%
+  summarise(Score = mean(Score))
+
+# cfRRBS in silico
+overall_cfrrbs_score <- score_cfrrbs %>%
+  group_by(deconv_tool) %>%
+  summarise(Score = mean(Score))
+
+# cfRRBS in vitro
+overall_cfrrbs_invitro_score <- score_cfrrbs_invitro %>%
+  group_by(deconv_tool) %>%
+  summarise(Score = mean(Score))
+
+# Assign scores
+overall_wgbs_score$weight <- 1
+overall_rrbs_score$weight <- 0.5
+overall_cfrrbs_score$weight <- 0.25
+overall_cfrrbs_invitro_score$weight <- 0.25
+aggr_scalab_score$weight <- 0.1
+```
+
+Combine the scores using a weighted mean
+
+```{r}
+# Combine all score dataframes into one
+all_scores <- bind_rows(
+  overall_wgbs_score,
+  overall_rrbs_score,
+  overall_cfrrbs_score,
+  overall_cfrrbs_invitro_score,
+  aggr_scalab_score
+)
+
+# Compute weighted mean per deconv_tool
+overall_score <- all_scores %>%
+  group_by(deconv_tool) %>%
+  summarise(
+    Overall_Score = sum(Score * weight) / sum(weight),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Overall_Score)) %>%
+  mutate(Rank = rev(rank(Overall_Score)))
+```
+
+
+
+
+## Plot funkyheatmap
+
+Now we are ready to plot the funkyheatmap. However, we have to prepare the dataset in such a format which is accepted by the library. We will first concatanate all the datasets previously generated.
+
+```{r}
+# Concatanate the datasets
+data_funkyheat <- inner_join(funkyheat_permetric_auc, funkyheat_permetric_rmse, by= "deconv_tool" ) %>%
+  inner_join(funkyheat_permetric_scc, by = "deconv_tool") %>%
+  inner_join(funkyheat_perdmrtool_score, by = "deconv_tool") %>%
+  inner_join(funkyheat_perdataset_score, by = "deconv_tool") %>%
+  inner_join(funkyheat_perdataset_perseqdepth_score, by = "deconv_tool") %>%
+  inner_join(average_memory, by = "deconv_tool") %>%
+  inner_join(average_runtime, by = "deconv_tool") %>%
+  inner_join(overall_score, by = "deconv_tool")
+
+# Add the python/R logos depending on the tool
+data_funkyheat$Availability <- c("python-logo.png","R_logo.png","R_logo.png",
+                                 "python-logo.png","python-logo.png",
+                                 "python-logo.png","R_logo.png","R_logo.png",
+                                 "R_logo.png","R_logo.png")
+data_funkyheat$Availability <- paste0(dir_path,"resources/", data_funkyheat$Availability)
+
+# Add the core statistical method depending on the tool and order the dataset based on the overall score
+data_funkyheat$Statistical_Method <- c("EM","CP/QP","CP/QP","NNLS+\nAdam","NNLS","NNLS","NMF","RPC","RPC","v-SVR")
+data_funkyheat <- data_funkyheat[order(data_funkyheat$Overall_Score, decreasing = T),]
+```
+
+Prepare the column info necessary for the funkyheatmap. Here we define the palette to use for each group.
+
+```{r}
+palettes <- tribble(
+  ~palette, ~colours,
+  # blues palette
+  "overall", grDevices::colorRampPalette(rev(RColorBrewer::brewer.pal(9, "Greys")[-1]))(101),
+  "benchmark", grDevices::colorRampPalette(rev(RColorBrewer::brewer.pal(9, "Blues") %>% c("#011636")))(101),
+  "scaling", grDevices::colorRampPalette(rev(RColorBrewer::brewer.pal(9, "Reds")[-8:-9]))(101),
+  "stability", grDevices::colorRampPalette(rev(RColorBrewer::brewer.pal(9, "YlOrBr")[-7:-9]))(101),
+  "qc", grDevices::colorRampPalette(rev(RColorBrewer::brewer.pal(9, "Greens")[-1] %>% c("#00250f")))(101),
+  "white6black4", c(rep("white", 3), rep("black", 7)),
+  # "column_annotation", c(overall = "#555555", benchmark = "#4292c6", scaling = "#f6483a", stability = "#fe9929", qc = "#41ab5d")
+)
+```
+
+And here we define the groups to plot, that have to match the final dataframe (data_funkyheatmap) column names
+
+```{r}
+column_info <- tribble(
+  ~id,                  ~group,               ~name,                  ~geom,        ~palette,    ~options,
+  "deconv_tool",        "Method",             "",                     "text",       "overall",   lst(hjust = 0, width = 6),
+  "Statistical_Method", "Method",             "Statistical method",   "text",       "overall",   lst(width = 2),
+  "Availability",       "Method",             "Availability",         "image",      "overall",   lst(width = 1.5),
+  "RMSE",               "Summary",            "1-RMSE",               "bar",        "benchmark",        lst(),
+  "SCC",                "Summary",            "SCC",                  "bar",        "benchmark",        lst(),
+  "AUC",                "Summary",            "AUC",                  "bar",        "benchmark",        lst(),
+  "DMRfinder",          "Per DMRtool",        "DMRfinder",            "funkyrect",  "benchmark", lst(),
+  "limma",              "Per DMRtool",        "limma",                "funkyrect",  "benchmark", lst(),
+  "wgbstools",          "Per DMRtool",        "wgbstools",            "funkyrect",  "benchmark", lst(),
+  "WGBS",               "Per dataset",        "WGBS",                 "funkyrect",  "benchmark", lst(),
+  "RRBS",               "Per dataset",        "RRBS",                 "funkyrect",  "benchmark", lst(),
+  "cfRRBS_insilico",    "Per dataset",        "cfRRBS (in-silico)",   "funkyrect",  "benchmark", lst(),
+  "cfRRBS_invitro",     "Per dataset",        "cfRRBS (in-vitro)",    "funkyrect",  "benchmark", lst(),
+  "WGBS_62M",           "Per SeqDepth (WGBS)","62M",                  "funkyrect",  "benchmark", lst(),
+  "WGBS_183M",          "Per SeqDepth (WGBS)","183M",                 "funkyrect",  "benchmark", lst(),
+  "WGBS_310M",          "Per SeqDepth (WGBS)","320M",                 "funkyrect",  "benchmark", lst(),
+  "WGBS_620M",          "Per SeqDepth (WGBS)","620M",                 "funkyrect",  "benchmark", lst(),
+  "RRBS_2M",            "Per SeqDepth (RRBS)","2M",                   "funkyrect",  "benchmark", lst(),
+  "RRBS_5M",            "Per SeqDepth (RRBS)","5M",                   "funkyrect",  "benchmark", lst(),
+  "RRBS_10M",           "Per SeqDepth (RRBS)","10M",                  "funkyrect",  "benchmark", lst(),
+  "RRBS_15M",           "Per SeqDepth (RRBS)","15M",                  "funkyrect",  "benchmark", lst(),
+  "RRBS_20M",           "Per SeqDepth (RRBS)","20M",                  "funkyrect",  "benchmark", lst(),
+  "cfRRBS_2M",          "Per SeqDepth (cfRRBS)","2M",                   "funkyrect",  "benchmark", lst(),
+  "cfRRBS_5M",          "Per SeqDepth (cfRRBS)","5M",                 "funkyrect",  "benchmark", lst(),
+  "cfRRBS_10M",         "Per SeqDepth (cfRRBS)","10M",                "funkyrect",  "benchmark", lst(),
+  "cfRRBS_15M",         "Per SeqDepth (cfRRBS)","15M",                "funkyrect",  "benchmark", lst(),
+  "cfRRBS_20M",         "Per SeqDepth (cfRRBS)","20M",                "funkyrect",  "benchmark", lst(),
+  "Memory",             "Scalability",        "Memory (MB)",          "rect",       "scaling",   lst(width = 1.7),
+  "Memory",             "Scalability",        "Memory (MB)",          "text",       "black",     lst(overlay = TRUE),
+  "Runtime",            "Scalability",        "Runtime (sec)",        "rect",       "scaling",   lst(width = 1.7),
+  "Runtime",            "Scalability",        "Runtime (sec)",        "text",       "black",     lst(overlay = TRUE),
+  "Overall_Score",      "Final Ranking",      "Overall score",        "bar",        "stability", lst(width = 2.4),
+  "Rank",               "Final Ranking",      "Ranking",              "text",       "stability", lst(width = 1.8),
+
+
+)
+```
+
+Define the subgroups/subsections to plot in the funkyheatmap
+
+```{r}
+column_groups <- tibble(
+  Experiment = c("Method", "General performance", "General performance", "General performance","Performance per sequencing depth", "Performance per sequencing depth", "Performance per sequencing depth", "Scalability","Final Ranking"),
+  Category = c("", "Per metric", "Per DMRtool", "Per dataset", "WGBS" , "RRBS", "cfRRBS", "",""),
+  group = c("Method", "Summary", "Per DMRtool", "Per dataset", "Per SeqDepth (WGBS)", "Per SeqDepth (RRBS)", "Per SeqDepth (cfRRBS)", "Scalability","Final Ranking"),
+  palette = c("overall","benchmark", "benchmark", "benchmark", "benchmark", "benchmark", "benchmark", "scaling","stability")
+)
+```
+
+
+And finally plot it
+
+```{r}
+g <- funky_heatmap(data_funkyheat, 
+                   column_info = column_info,
+                   column_groups = column_groups,
+                   palettes = palettes
+                   ) 
+g
+```
+
+And save it in the correct location in svg format for a better visualization.
+
+```{r}
+output_dir <- paste0(dir_path,"plots/06_funkyheatmap")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+output_file <- file.path(output_dir, paste0("funkyheatmap.svg"))
+ggsave(output_file, g, width = g$width, height = g$height)
+```
+
+
+
+
