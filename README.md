@@ -21,6 +21,27 @@ The tutorials included here guide you through the main analyses presented in the
 
 ---
 
+## Dependencies
+
+Make sure the following R packages are installed before running the notebooks.
+
+```r
+# Install CRAN packages
+install.packages(c(
+  "tidyverse", "dplyr", "tidyr", "stringr",
+  "ggplot2", "ggpubr", "patchwork", "pROC",
+  "metrics", "devtools", "knitr", "rmarkdown", "remotes", "funkyheatmap"
+))
+
+# Install Bioconductor packages
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install(c("ComplexHeatmap", "circlize"))
+```
+
+---
+
 ## Analysis Workflow
 
 The analyses should be run in the following order. Each notebook generates plots saved in a dedicated subfolder under `plots/`:
