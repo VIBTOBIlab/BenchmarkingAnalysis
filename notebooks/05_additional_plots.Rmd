@@ -15,18 +15,16 @@ It is important to highlight that to evaluate the performance of the deconvoluti
 
 ### Setting up the environment
 
-First, set up the main directory chaning the paths below
+First, set up the main directory
 
 ```{r setup}
-knitr::opts_knit$set(root.dir = '~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/')
-# Define the directory containing the CSV files
-dir_path <- "~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/"
+# Don't change this if you git cloned the entire GitHub repository and you are working in the notebooks/ folder
+knitr::opts_knit$set(root.dir = '.')
 ```
 
 Import the necessary libraries for the analysis
 
 ```{r message=FALSE, warning=FALSE}
-library(Metrics)
 library(ggpubr)
 library(dplyr)
 library(tidyverse)
@@ -37,7 +35,7 @@ library(pROC)
 Import the useful functions and the metrics
 
 ```{r}
-source("R/compute_auc.R")
+source("../R/compute_auc.R")
 
 # RMSE
 rmse <- function(actual, predicted) {
@@ -56,7 +54,7 @@ scc <- function(actual, predicted) {
 Now, we will import all the results generated and described above. Note that here we expect that you have git cloned the repository and thus have the expected folder structure where in the folder resources/ there are the results files.
 
 ```{r}
-df_raw <- read.csv(paste0(dir_path,"resources/final_benchmarking_dataset.csv"))
+df_raw <- read.csv("../resources/final_benchmarking_dataset.csv")
 bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico")
 ```
 
@@ -196,7 +194,7 @@ Plot min-max scaled metrics for all the datasets
 
 ```{r}
 # Create a directory to save the plots (optional)
-output_dir <- paste0(dir_path,"plots/05_additional_plots/rankings_per_dataset/")
+output_dir <- "../plots/05_additional_plots/rankings_per_dataset/"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
 # Plot the ranking per dataset
@@ -253,7 +251,8 @@ for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
                 panel.grid.minor.y = element_line(color = "grey90")
             ) +
             scale_color_manual(values=c("limma"="#F8766D","wgbstools"="#00BA38","DMRfinder"="#619CFF"))
-  
+        print(p)
+        
         # Save the plot as an image
         output_file <- file.path(output_dir, paste0(metric,"_",dataset,".svg"))
         ggsave(output_file, plot = p, width = 8, height = 6)
@@ -268,7 +267,7 @@ Here, we want to visualize how many times a tool is found in a given ranking pos
 
 ```{r}
 # Create a directory to save the plots (optional)
-output_dir <- paste0(dir_path,"plots/05_additional_plots/ranking_distributions")
+output_dir <- "../plots/05_additional_plots/ranking_distributions"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
@@ -329,6 +328,7 @@ for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
       ) +
       scale_x_continuous(breaks = seq(1, max(rank_counts$Rank))) +
       ylab("")
+    print(p)
     
     # Save the plot as an image
     output_file <- file.path(output_dir, paste0("ranking_distribution_",metric,"_",dataset,".svg"))
@@ -343,11 +343,11 @@ We can now plot the ranking distribution for the LoD as well. For more informati
 
 ```{r}
 # Create a directory to save the plots (optional)
-output_dir <- paste0(dir_path,"plots/05_additional_plots/ranking_distributions")
+output_dir <- "../plots/05_additional_plots/ranking_distributions"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 # Import the results generated in 02_ notebook
-all.stats <- read.csv(paste0(dir_path,"/resources/lod_allstats.csv"))
+all.stats <- read.csv("../resources/lod_allstats.csv")
 
 for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
       
@@ -401,6 +401,7 @@ for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
     guides(color = "none") +
     scale_x_continuous(breaks = seq(1, max(rank_counts$rank_raw))) +
     ylab("")
+  print(p)
   
   # Save the plot as an image
   output_file <- file.path(output_dir, paste0("ranking_distribution_LoD_",dataset,".svg"))
@@ -415,7 +416,7 @@ We can now rank the tools based on the AUC-ROC score. We will use the raw score 
 
 ```{r}
 # Create a directory to save the plots (optional)
-output_dir <- paste0(dir_path,"plots/05_additional_plots/dotplots_rank_AUC")
+output_dir <- "../plots/05_additional_plots/dotplots_rank_AUC"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
@@ -465,7 +466,8 @@ for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
               panel.grid.major.y = element_line(color = "grey90"),
               panel.grid.minor.y = element_line(color = "grey90")) +
         scale_fill_viridis_d(option = option, direction = -1)
-            
+  print(p)
+  
   # Save the plot as an image
   output_file <- file.path(output_dir, paste0("rank_AUC_",dataset,".svg"))
   ggsave(output_file, plot = p, width = 8, height = 6)

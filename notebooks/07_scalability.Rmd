@@ -11,12 +11,11 @@ In this tutorial we will go over the scalability results in terms of running tim
 
 ### Setting up the environment
 
-First, set up the main directory chaning the paths below
+First, set up the main directory
 
 ```{r setup}
-knitr::opts_knit$set(root.dir = '~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/')
-# Define the directory containing the CSV files
-dir_path <- "~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/"
+# Don't change this if you git cloned the entire GitHub repository and you are working in the notebooks/ folder
+knitr::opts_knit$set(root.dir = './')
 ```
 
 Import the necessary libraries for the analysis
@@ -32,7 +31,7 @@ library(stringr)
 Import the results
 
 ```{r}
-res.scal <- read.csv(paste0(dir_path,"resources/scalability.clean.csv"))
+res.scal <- read.csv("../resources/scalability.clean.csv")
 ```
 
 
@@ -126,7 +125,7 @@ combined.plot
 ```
 
 ```{r}
-output_dir <- paste0(dir_path,"plots/07_scalability")
+output_dir <- "../plots/07_scalability"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 output_file <- file.path(output_dir, paste0("memory_time_boxplots_8CPU_16GB.svg"))
@@ -173,7 +172,7 @@ combined.plot
 
 
 ```{r}
-output_dir <- paste0(dir_path,"plots/07_scalability")
+output_dir <- "../plots/07_scalability"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 output_file <- file.path(output_dir, paste0("memory_samples_dmrs_8CPU_16GB.svg"))
@@ -223,7 +222,7 @@ combined.plot
 
 
 ```{r}
-output_dir <- paste0(dir_path,"plots/07_scalability")
+output_dir <- "../plots/07_scalability"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 output_file <- file.path(output_dir, paste0("time_samples_dmrs_8CPU_16GB.svg"))

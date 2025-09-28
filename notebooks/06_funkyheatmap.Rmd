@@ -15,18 +15,16 @@ It is important to highlight that to evaluate the performance of the deconvoluti
 
 ### Setting up the environment
 
-First, set up the main directory chaning the paths below
+First, set up the main directory
 
 ```{r setup}
-knitr::opts_knit$set(root.dir = '~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/')
-# Define the directory containing the CSV files
-dir_path <- "~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/"
+# Don't change this if you git cloned the entire GitHub repository and you are working in the notebooks/ folder
+knitr::opts_knit$set(root.dir = './')
 ```
 
 Import the necessary libraries for the analysis
 
 ```{r message=FALSE, warning=FALSE}
-library(Metrics)
 library(ggpubr)
 library(dplyr)
 library(tidyr)
@@ -38,7 +36,7 @@ library(pROC)
 Import the useful functions and the metrics
 
 ```{r}
-source("R/compute_auc.R")
+source("../R/compute_auc.R")
 
 # RMSE
 rmse <- function(actual, predicted) {
@@ -59,7 +57,7 @@ Now, we will import all the results generated. Note that here we expect that you
 
 ```{r}
 # Read the dataset and remove the na values
-df <- read.csv(paste0(dir_path,"resources/final_benchmarking_dataset.csv"))
+df <- read.csv("../resources/final_benchmarking_dataset.csv")
 bench <- subset(df, !(is.na(predicted_tf)))
 
 # Divide the dataframe into each different dataset
@@ -395,7 +393,7 @@ rmse_cfrrbs <- in_silico_cfrrbs %>%
   summarise(RMSE = 1-mean(RMSE_minmax), .groups = "drop")
 ```
 
-We can now combined the metrics into a unique, overall Score
+We can now combine the metrics into a unique, overall Score
 
 ```{r}
 # Compute the number of zeros and non-zero observations
@@ -531,7 +529,7 @@ score_cfrrbs_invitro <- score_cfrrbs_invitro %>%
 
 ## Aggregate the metrics
 
-We will now aggregate the metrics of the datasets according to different variables. We will aggregate per metric to have an overall per metric performance. We will also aggregate per DMR tool, per sequencing depth and per dataset. We will give a different weigth to each dataset to balance the difference in terms of sequencing technology. Since there is only 1 WGBS dataset and 3 RRBS-like datasets, we will give the weight of 1 to the WGBS, 0.5 to the RRBS and 0.25 to both the in-silico and in-vitro cfRRBS dataset.
+We will now aggregate the metrics of the datasets according to different variables. We will aggregate per metric to have an overall per metric performance. We will also aggregate per DMR tool, per sequencing depth and per dataset. We will give a different weight to each dataset to balance the difference in terms of sequencing technology. Since there is only 1 WGBS dataset and 3 RRBS-like datasets, we will give the weight of 1 to the WGBS, 0.5 to the RRBS and 0.25 to both the in-silico and in-vitro cfRRBS dataset.
 
 ### Aggregate per metric
 
@@ -809,7 +807,7 @@ An important aspect in the evaluation of deconvolution tools is the scalability 
 
 ```{r}
 # Read the dataset and subset the useful columns
-scalability.df <- read.csv(paste0(dir_path, "resources/scalability.clean.csv"), row.names = 1)
+scalability.df <- read.csv("../resources/scalability.clean.csv", row.names = 1)
 scalability.df <- scalability.df[,c("name","dmr","samples","realtime_sec","peak_rss_mb")]
 names(scalability.df)[1] <- "deconv_tool"
 
@@ -910,10 +908,10 @@ overall_score <- all_scores %>%
 
 ## Plot funkyheatmap
 
-Now we are ready to plot the funkyheatmap. However, we have to prepare the dataset in such a format which is accepted by the library. We will first concatanate all the datasets previously generated.
+Now we are ready to plot the funkyheatmap. However, we have to prepare the dataset in such a format which is accepted by the library. We will first concatenate all the datasets previously generated.
 
 ```{r}
-# Concatanate the datasets
+# Concatenate the datasets
 data_funkyheat <- inner_join(funkyheat_permetric_auc, funkyheat_permetric_rmse, by= "deconv_tool" ) %>%
   inner_join(funkyheat_permetric_scc, by = "deconv_tool") %>%
   inner_join(funkyheat_perdmrtool_score, by = "deconv_tool") %>%
@@ -928,7 +926,7 @@ data_funkyheat$Availability <- c("python-logo.png","R_logo.png","R_logo.png",
                                  "python-logo.png","python-logo.png",
                                  "python-logo.png","R_logo.png","R_logo.png",
                                  "R_logo.png","R_logo.png")
-data_funkyheat$Availability <- paste0(dir_path,"resources/", data_funkyheat$Availability)
+data_funkyheat$Availability <- paste0("../resources/", data_funkyheat$Availability)
 
 # Add the core statistical method depending on the tool and order the dataset based on the overall score
 data_funkyheat$Statistical_Method <- c("EM","CP/QP","CP/QP","NNLS+\nAdam","NNLS","NNLS","NMF","RPC","RPC","v-SVR")
@@ -1008,7 +1006,7 @@ column_groups <- tibble(
 
 And finally plot it
 
-```{r}
+```{r warning=FALSE}
 g <- funky_heatmap(data_funkyheat, 
                    column_info = column_info,
                    column_groups = column_groups,
@@ -1020,7 +1018,7 @@ g
 And save it in the correct location in svg format for a better visualization.
 
 ```{r}
-output_dir <- paste0(dir_path,"plots/06_funkyheatmap")
+output_dir <- "../plots/06_funkyheatmap"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 output_file <- file.path(output_dir, paste0("funkyheatmap.svg"))

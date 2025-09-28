@@ -30,7 +30,8 @@ Make sure the following R packages are installed before running the notebooks.
 install.packages(c(
   "tidyverse", "dplyr", "tidyr", "stringr",
   "ggplot2", "ggpubr", "patchwork", "pROC",
-  "metrics", "devtools", "knitr", "rmarkdown", "remotes", "funkyheatmap"
+  "metrics", "devtools", "knitr", "rmarkdown", 
+  "remotes", "funkyheatmap", "svglite"
 ))
 
 # Install Bioconductor packages

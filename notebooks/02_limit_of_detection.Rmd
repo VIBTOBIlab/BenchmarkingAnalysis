@@ -11,12 +11,11 @@ In this tutorial we want to show how to compute the LoD of each tool, across the
 
 ### Setting up the environment
 
-First, set up the main directory chaning the paths below
+First, set up the main directory
 
 ```{r setup}
-knitr::opts_knit$set(root.dir = '~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/')
-# Define the directory containing the CSV files
-dir_path <- "~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/"
+# Don't change this if you git cloned the entire GitHub repository and you are working in the notebooks/ folder
+knitr::opts_knit$set(root.dir = './')
 ```
 
 Import the necessary libraries for the analysis
@@ -32,14 +31,14 @@ library(ComplexHeatmap)
 Import the useful functions
 
 ```{r}
-source("R/compute_lod.R")
+source("../R/compute_lod.R")
 ```
 
 
 Now, we will import all the results generated and described above. Note that here we expect that you have git cloned the repository and thus have the expected folder structure where in the folder resources/ there are the results files.
 
 ```{r}
-df_raw <- read.csv(paste0(dir_path,"resources/final_benchmarking_dataset.csv"))
+df_raw <- read.csv("../resources/final_benchmarking_dataset.csv")
 bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico") %>%
   filter(!is.na(predicted_tf))
 ```
@@ -109,7 +108,7 @@ for (type in unique(bench.res$tumor_type)) {
 ```
 
 
-Now we can compute the ranking based on the LoD: the lower the LoD the lower (better) the ranking. In case of a tie, we take the minimum ranking for both tools.
+Now we can compute the ranking based on the LoD: the lower the LoD the lower (better) the ranking. In case of a tie, we take the minimum ranking for both tools. Optionally, you can uncomment the last line to save the LoD results, already stored in the **../resources** directory.
 
 ```{r}
 all.stats <- all.stats %>%
@@ -187,7 +186,7 @@ p
 
 ```{r}
 # Create the main directory to save the plots
-output_dir <- paste0(dir_path, "plots/02_lod_heatmaps")
+output_dir <- "../plots/02_lod_heatmaps"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 # Save to PDF
@@ -260,7 +259,7 @@ p
 
 ```{r}
 # Create the main directory to save the plots
-output_dir <- paste0(dir_path, "plots/02_lod_heatmaps")
+output_dir <- "../plots/02_lod_heatmaps"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 # Save to PDF
@@ -332,7 +331,7 @@ p
 
 ```{r}
 # Create the main directory to save the plots
-output_dir <- paste0(dir_path, "plots/02_lod_heatmaps")
+output_dir <- "../plots/02_lod_heatmaps"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 # Save to PDF

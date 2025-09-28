@@ -11,12 +11,11 @@ In this tutorial we want to show how to analyse the robustness of the tools when
 
 ### Setting up the environment
 
-First, set up the main directory chaning the paths below
+First, set up the main directory
 
 ```{r setup}
-knitr::opts_knit$set(root.dir = '~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/')
-# Define the directory containing the CSV files
-dir_path <- "~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/"
+# Don't change this if you git cloned the entire GitHub repository and you are working in the notebooks/ folder
+knitr::opts_knit$set(root.dir = './')
 ```
 
 Import the necessary libraries for the analysis
@@ -31,7 +30,7 @@ library(pROC)
 Now, we will import all the results generated on the in silico mixtures. Note that here we expect that you have git cloned the repository and thus have the expected folder structure where in the folder resources/ there are the results files.
 
 ```{r}
-df_raw <- read.csv(paste0(dir_path,"resources/final_benchmarking_dataset.csv"))
+df_raw <- read.csv("../resources/final_benchmarking_dataset.csv")
 bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico") %>%
   filter(!is.na(predicted_tf))
 ```
@@ -39,7 +38,7 @@ bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico") %>%
 Import the useful functions and the metrics
 
 ```{r}
-source("R/compute_auc.R")
+source("../R/compute_auc.R")
 
 # RMSE
 rmse <- function(actual, predicted) {
@@ -120,7 +119,7 @@ We can now plot the AUC-ROC score distribution using the boxplots across the dif
 
 ```{r warning=FALSE}
 # Create a directory to save the plots (optional)
-output_dir <- paste0(dir_path,"plots/03_seqdepth_robustness")
+output_dir <- "../plots/03_seqdepth_robustness"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 # Order the seq depths levels
@@ -161,6 +160,7 @@ for (tum in unique(auc_wgbs$tumor_type)) {
           panel.grid.minor.y = element_line(color = "grey90")) +
     scale_fill_manual(values = c("62M"="#FAEBDDFF","183M"="#F69C73FF","310M"="#A11A5BFF","620M"="#03051AFF")) +
     ylim(0.5,1.2)
+  print(p1)
   
   # Save the plot as an image
   output_file <- file.path(output_dir, paste0("robustness_AUC_WGBS_",tum,".svg"))
@@ -209,7 +209,7 @@ p1
 
 ```{r}
 # Create a directory to save the plots (optional)
-output_dir <- paste0(dir_path,"plots/03_seqdepth_robustness")
+output_dir <- "../plots/03_seqdepth_robustness"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 # Save the plot as an image
@@ -276,7 +276,7 @@ We can now plot the AUC-ROC score distribution using the boxplots across the dif
 
 ```{r warning=FALSE}
 # Create a directory to save the plots (optional)
-output_dir <- paste0(dir_path,"plots/03_seqdepth_robustness")
+output_dir <- "../plots/03_seqdepth_robustness"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 # Order the seq depths levels
@@ -318,6 +318,7 @@ for (tum in unique(auc_rrbs$tumor_type)) {
           panel.grid.minor.y = element_line(color = "grey90")) +
     scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF")) +
     ylim(0.5,1.2)
+  print(p1)
   
   # Save the plot as an image
   output_file <- file.path(output_dir, paste0("robustness_AUC_RRBS_",tum,".svg"))
@@ -368,7 +369,7 @@ p1
 
 ```{r}
 # Create a directory to save the plots (optional)
-output_dir <- paste0(dir_path,"plots/03_seqdepth_robustness")
+output_dir <- "../plots/03_seqdepth_robustness"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 # Save the plot as an image

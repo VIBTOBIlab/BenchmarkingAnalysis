@@ -15,18 +15,16 @@ It is important to highlight that to evaluate the performance of the deconvoluti
 
 ### Setting up the environment
 
-First, set up the main directory chaning the paths below
+First, set up the main directory
 
 ```{r setup}
-knitr::opts_knit$set(root.dir = '~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/')
-# Define the directory containing the CSV files
-dir_path <- "~/OneDrive-UGent/Projects/002_Benchmarking/BenchmarkingAnalysis/"
+# Don't change this if you git cloned the entire GitHub repository and you are working in the notebooks/ folder
+knitr::opts_knit$set(root.dir = './')
 ```
 
 Import the necessary libraries for the analysis
 
 ```{r message=FALSE, warning=FALSE}
-library(Metrics)
 library(ggpubr)
 library(dplyr)
 library(tidyverse)
@@ -38,7 +36,7 @@ library(pROC)
 Import the useful functions and the metrics
 
 ```{r}
-source("R/compute_auc.R")
+source("../R/compute_auc.R")
 
 # RMSE
 rmse <- function(actual, predicted) {
@@ -57,7 +55,7 @@ scc <- function(actual, predicted) {
 Now, we will import all the results generated and described above. Note that here we expect that you have git cloned the repository and thus have the expected folder structure where in the folder resources/ there are the results files.
 
 ```{r}
-df_raw <- read.csv(paste0(dir_path,"resources/final_benchmarking_dataset.csv"))
+df_raw <- read.csv("../resources/final_benchmarking_dataset.csv")
 bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico")
 ```
 
@@ -272,7 +270,7 @@ wgbs_score_mat <- final_wgbs_df_long %>%
 wgbs_score_mat <- wgbs_score_mat[, desired_order]
 ```
 
-Oder the rows based on the Score values to give kind of a ranking
+Order the rows based on the Score values to give kind of a ranking
 
 ```{r}
 # Compute row means of the Score matrix
@@ -344,11 +342,11 @@ draw(Reduce(`+`, heatmaps))
 
 ```{r}
 # Create the main directory to save the plots
-output_dir <- paste0(dir_path, "plots/01_comprehensive_heatmaps")
+output_dir <- "../plots/01_comprehensive_heatmaps"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 # Combine and draw
-pdf(paste0(dir_path,"plots/comprehensive_heatamaps/wgbs_heatmap.pdf"), width = 12, height = 6)
+pdf(paste0(output_dir,"/wgbs_heatmap.pdf"), width = 12, height = 6)
 draw(Reduce(`+`, heatmaps))
 dev.off()
 ```
@@ -486,11 +484,11 @@ draw(Reduce(`+`, heatmaps))
 
 ```{r eval=FALSE, include=FALSE}
 # Create the main directory to save the plots
-output_dir <- paste0(dir_path, "plots/01_comprehensive_heatmaps")
+output_dir <- "../plots/01_comprehensive_heatmaps"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 # Save
-pdf(paste0(dir_path,"plots/comprehensive_heatamaps/rrbs_heatmap.pdf"), width = 12, height = 6)
+pdf(paste0(output_dir,"/rrbs_heatmap.pdf"), width = 12, height = 6)
 draw(Reduce(`+`, heatmaps))
 dev.off()
 ```
@@ -625,11 +623,11 @@ draw(Reduce(`+`, heatmaps))
 
 ```{r eval=FALSE, include=FALSE}
 # Create the main directory to save the plots
-output_dir <- paste0(dir_path, "plots/01_comprehensive_heatmaps")
+output_dir <- "../plots/01_comprehensive_heatmaps"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 # Combine and draw
-pdf(paste0(dir_path,"plots/comprehensive_heatamaps/cfrrbs_heatmap.pdf"), width = 12, height = 6)
+pdf(paste0(output_dir, "/cfrrbs_heatmap.pdf"), width = 12, height = 6)
 draw(Reduce(`+`, heatmaps))
 dev.off()
 ```
