@@ -13,7 +13,9 @@ The tutorials included here guide you through the main analyses presented in the
 
 ```
 .
-├── notebooks/    # R Markdown (.Rmd) files and rendered HTML reports
+├── Docker/       # Contains Dockerfile used to build the Docker Container
+├── notebooks/    # R Markdown (.Rmd) files
+│   └── html/     # Rendered HTML files from the notebooks
 ├── R/            # Custom R functions used across the notebooks
 ├── resources/    # Results, datasets, and supporting files for analyses & plots
 └── plots/        # Generated automatically by the notebooks, organized by step
@@ -21,9 +23,31 @@ The tutorials included here guide you through the main analyses presented in the
 
 ---
 
-## Dependencies
+## Run the analyses using a Docker container
 
-Make sure the following R packages are installed before running the notebooks.
+You can run the full analysis inside a Docker container (already built using the following [Dockerfile](Docker/Dockerfile)) without manually installing dependencies:
+
+1. Run the container, mounting the current repository:
+
+   ```bash
+   docker run --rm \                                    
+      -p 8787:8787 \
+      -e PASSWORD=mypassword \ # Modify the password with a personal one
+      -v $(pwd):/home/rstudio/benchmark \
+      benchmark-rstudio:v1
+   ```
+2. Open http://localhost:8787 in your web browser to access RStudio Server inside the container.
+
+   - Default username: rstudio
+   - Default password: mypassword
+
+Once logged in, you can open and run the .Rmd notebooks located in /home/rstudio/benchmark/notebooks/.
+
+---
+
+## Run the analyses with locally installed dependencies
+
+Alternatively, you can run the analysis using your local environment, but make sure that the following R packages are installed before running the notebooks.
 
 ```r
 # Install CRAN packages

@@ -86,25 +86,16 @@ bench.res <- bench.res %>%
 
 ### Heatmap of all combinations
 
-As a first step in the analysis, we think that a comphrensive heatamap of all possible combinations might be useful as a starting point. We will first compute the metrics necessary for the heatmap: being RMSE, AUC-ROC score, SCC and the overall Score. Since the RMSE is not a scale-free metric, it will increase at increasing observed tumoral fraction. This determines that the RMSE at high tumoral fraction (e.g. 0.25 and 0.5) will dominate the overall and advantage those tools that perform well uniquely at high tumoral fractions. To account for this bias, we have decided to compute the RMSE separately at each observed tumoral fraction within each combination, then min-max scale it across deconvolution tools and aggregate the individual min-max scaled RMSE at each tumoral fraction using the mean to get a unique RMSE per combination.
+As a first step in the analysis, we think that a comphrensive heatamap of all possible combinations might be useful as a starting point. We will first compute the metrics necessary for the heatmap: being RMSE, AUC-ROC score, SCC and the overall Score. Since the RMSE is not a scale-free metric, it will increase at increasing observed tumoral fraction. This determines that the RMSE at high tumoral fraction (e.g. 0.25 and 0.5) will dominate the overall and advantage those tools that perform well uniquely at high tumoral fractions. To account for this bias, in the final metrics used to rank the tools we have decided to compute the RMSE separately at each observed tumoral fraction within each combination, then min-max scale it across deconvolution tools and aggregate the individual min-max scaled RMSE at each tumoral fraction using the mean to get a unique RMSE per combination. However, here we want to see how the metrics change across the different combinations, and min-max scaling the metrics across deconvolution tools might give us the wrong impression that the RMSE increases at increasing sequencing depth or different DMR tool for example. However, when min-max scaled across tools, an increase in the RMSE of a specific at increased sequencing depth would just reflect that that tool is just performing worse than other tools, while the raw RMSE was actually stable.
 
 ```{r}
-rmse_minmax <- bench.res %>%
+rmse_raw <- bench.res %>%
   filter(expected_tf != 0) %>%
-  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type, expected_tf) %>%
-  mutate(RMSE = rmse(expected_tf, predicted_tf)) %>%
-  ungroup() %>%
-  group_by(dmr_tool, seq_depth, tumor_type, expected_tf) %>%
-  mutate(
-    RMSE_min = min(RMSE),
-    RMSE_max = max(RMSE),
-    RMSE_minmax = (RMSE - RMSE_min) / (RMSE_max - RMSE_min)
-  ) %>%
   group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
-  summarise(RMSE = 1-mean(RMSE_minmax), .groups = "drop")
+  summarize(RMSE = 1-rmse(expected_tf, predicted_tf))
 ```
 
-Then we compute the AUC for each tool. To compute it, we will loop over each combination and calculate the AUC-ROC score at each tumor fraction. Then, to get an estimation of the AUC-ROC score per combination, we will average the individual AUC-ROC scores per fraction. We will finally min-max scale it as we did with the RMSE.
+Then we compute the AUC for each tool. To compute it, we will loop over each combination and calculate the AUC-ROC score at each tumor fraction. Then, to get an estimation of the AUC-ROC score per combination, we will average the individual AUC-ROC scores per fraction.
 
 ```{r}
 # Create a new dataset dataframe where to store AUC-ROC results
@@ -142,45 +133,28 @@ for (type in unique(bench.res$tumor_type)) {
     }
   }
 }
-auc_minmax <- aucroc_data %>%
+auc_raw <- aucroc_data %>%
     group_by(deconv_tool, dmr_tool, seq_depth, tumor_type, expected_tf) %>%
     summarize(AUC=mean(auc),.groups = "drop") %>%
     group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
-    summarize(meanAUC=mean(AUC),.groups = "drop") %>%
-    group_by(dmr_tool, seq_depth, tumor_type) %>%
-    mutate(
-      AUC_min = min(meanAUC),
-      AUC_max = max(meanAUC),
-      AUC_minmax = (meanAUC - AUC_min) / (AUC_max - AUC_min)
-    ) %>%
-    group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
-    summarise(AUC = AUC_minmax, .groups = "drop")
+    summarize(AUC=mean(AUC),.groups = "drop")
 ```
 
-Finally, we compute the SCC. The SCC is computed for each combination pooling all the observed tumor fractions together to get a value for each combination. The SCC is then min-max scaled.
+Finally, we compute the SCC. The SCC is computed for each combination pooling all the observed tumor fractions together to get a value for each combination. 
 
 ```{r}
 # Compute the metrics: modify the RMSE= 1) nrmse 2) rmse 3) rmse of logit(values)
-scc_minmax <- bench.res %>%
+scc_raw <- bench.res %>%
   group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
-  summarise(SCC = cor(expected_tf, predicted_tf, method = "spearman"), .groups = "drop") %>%
-  ungroup() %>%
-  group_by(dmr_tool, seq_depth, tumor_type) %>%
-  mutate(
-    SCC_min = min(SCC),
-    SCC_max = max(SCC),
-    SCC_minmax = (SCC - SCC_min) / (SCC_max - SCC_min)
-  ) %>%
-  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
-  summarise(SCC = SCC_minmax, .groups = "drop")
+  summarise(SCC = cor(expected_tf, predicted_tf, method = "spearman"), .groups = "drop")
 ```
 
 We can now combine these metrics into a unique dataframe.
 
 ```{r}
-df.metrics <- rmse_minmax %>%
-  left_join(scc_minmax) %>%
-  left_join(auc_minmax)
+df.metrics <- rmse_raw %>%
+  left_join(scc_raw) %>%
+  left_join(auc_raw)
 ```
 
 To get an overview of the combined metrics and compute an overall score, we will just aggregate them using a weighted average as previously described.
@@ -296,7 +270,7 @@ tumors    <- rep(c("LUAD", "LUSC", "BRCA", "BLCA"), each = 4)
 # Assign palettes
 col_anno <- HeatmapAnnotation(
   SeqDepth = seq_depth,
-  Tumor    = tumors,
+  # Tumor    = tumors,Ç
   col = list(
     SeqDepth = c("62M"="#FAEBDDFF","183M"="#F69C73FF","310M"="#A11A5BFF","620M"="#03051AFF"),
     Tumor = c("LUAD"="#ff7f0e", "BRCA"="#2ca02c",
@@ -321,8 +295,7 @@ common_opts <- list(
 heatmap_data <- list(
   AUC         = wgbs_auc_mat,
   RMSE        = wgbs_rmse_mat,
-  SCC         = wgbs_scc_mat,
-  Score       = wgbs_score_mat
+  SCC         = wgbs_scc_mat
 )
 
 # Generate heatmaps with do.call
@@ -464,8 +437,7 @@ common_opts <- list(
 heatmap_data <- list(
   AUC         = rrbs_auc_mat,
   RMSE        = rrbs_rmse_mat,
-  SCC         = rrbs_scc_mat,
-  Score       = rrbs_score_mat
+  SCC         = rrbs_scc_mat
 )
 
 # Generate heatmaps with do.call
@@ -482,7 +454,7 @@ heatmaps <- lapply(names(heatmap_data), function(name) {
 draw(Reduce(`+`, heatmaps))
 ```
 
-```{r eval=FALSE, include=FALSE}
+```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/01_comprehensive_heatmaps"
 if (!dir.exists(output_dir)) dir.create(output_dir)
@@ -561,7 +533,7 @@ cfrrbs_score_mat <- cfrrbs_score_mat[, desired_order]
 
 ```{r}
 # Compute row means of the Score matrix
-score_means <- rowMeans(rrbs_score_mat, na.rm = TRUE)
+score_means <- rowMeans(cfrrbs_score_mat, na.rm = TRUE)
 
 # Order the row names based on descending Score (you can use decreasing = FALSE for ascending)
 ordered_rows <- names(sort(score_means, decreasing = TRUE))
@@ -603,8 +575,7 @@ common_opts <- list(
 heatmap_data <- list(
   AUC         = cfrrbs_auc_mat,
   RMSE        = cfrrbs_rmse_mat,
-  SCC         = cfrrbs_scc_mat,
-  Score       = cfrrbs_score_mat
+  SCC         = cfrrbs_scc_mat
 )
 
 # Generate heatmaps with do.call
@@ -621,7 +592,7 @@ heatmaps <- lapply(names(heatmap_data), function(name) {
 draw(Reduce(`+`, heatmaps))
 ```
 
-```{r eval=FALSE, include=FALSE}
+```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/01_comprehensive_heatmaps"
 if (!dir.exists(output_dir)) dir.create(output_dir)

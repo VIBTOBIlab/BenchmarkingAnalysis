@@ -315,7 +315,7 @@ for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
     p <- ggplot(rank_counts, aes(x = Rank, y = deconv_tool, size = Count)) +
       geom_point(color = "#3670A0", alpha = 0.8) +
       scale_size_continuous(range = c(3,10)) +
-      labs(title = paste("Rank distribution based on", metric),
+      labs(title = paste("Rank distribution of", metric, " in ", dataset),
            x = "Rank (lower = better)",
            y = "Deconvolution Tool",
            size = "Count") +
@@ -387,7 +387,7 @@ for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
     geom_point(color = "#3670A0", alpha = 0.8) +
     scale_color_gradient() +
     scale_size_continuous(range = c(3,10)) +
-    labs(title = paste("Ranking distribution based on LoD"),
+    labs(title = paste("Ranking distribution of LoD in ", dataset),
          x = "Rank (lower = better)",
          y = "Deconvolution Tool",
          size = "Count") +
