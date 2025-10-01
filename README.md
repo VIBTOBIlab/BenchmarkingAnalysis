@@ -34,7 +34,7 @@ You can run the full analysis inside a Docker container (already built using the
       -p 8787:8787 \
       -e PASSWORD=mypassword \ # Modify the password with a personal one
       -v $(pwd):/home/rstudio/benchmark \
-      benchmark-rstudio:v1
+      egiuili/benchmark-rstudio:v1
    ```
 2. Open http://localhost:8787 in your web browser to access RStudio Server inside the container.
 

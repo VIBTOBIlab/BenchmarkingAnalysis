@@ -72,7 +72,7 @@ in_vitro_cfrrbs <- subset(bench, bench$mixture_type == "in_vitro" & !grepl("-sub
 
 ### WGBS
 
-Compute the AUC values per tumoral fraction, then make the mean to have a mean AUC, then compute the min-max sclaed AUC across tools at each seq_depth, DMR tools and tumor_type.
+Compute the AUC values per tumoral fraction, then make the mean to have a mean AUC, then compute the min-max scaled AUC across tools at each seq_depth, DMR tools and tumor_type.
 
 
 ```{r}
@@ -419,7 +419,7 @@ score_cfrrbs <- score_cfrrbs %>%
 
 ### cfRRBS in vitro
 
-Compute the AUC values per tumoral fraction, then make the make to have a mean AUC, then compute the min-max sclaed AUC across tools at each seq_depth, DMR tools and tumor_type.
+Compute the AUC values per tumoral fraction, then make the make to have a mean AUC, then compute the min-max scaled AUC across tools at each seq_depth, DMR tools and tumor_type.
 
 
 ```{r message=FALSE, warning=FALSE}

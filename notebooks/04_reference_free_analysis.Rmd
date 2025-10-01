@@ -7,7 +7,7 @@ output: html_document
 
 ## Introduction
 
-In this tutorial we want to show how to compare the performance of the reference-free methods with the performance of the reference-based methods. Specifically, we want to see whether the former ones
+In this tutorial we want to show how to compare the performance of the reference-free methods with the performance of the reference-based methods. Specifically, we want to see whether the former ones out- or underperform the latter.
 
 ### Setting up the environment
 
@@ -180,7 +180,6 @@ p <- plot_data_lf %>%
 p
 ```
 
-As it is shown in the boxplots, reference-free methods tend to overestimate the tumor fraction, especially at high tumor fractions.
 
 ```{r}
 # Create the main directory to save the plots
@@ -217,7 +216,7 @@ lines_hf <- data.frame(
 p <- plot_data_hf %>%
           group_by(deconv_tool) %>%
           ggplot(aes(x = deconv_tool, y = predicted_tf,  color = RefType)) +
-          geom_boxplot() +
+          geom_boxplot(outliers = NA) +
           facet_wrap(~ as.factor(expected_tf), ncol = 6) +
           geom_segment(
             data = lines_hf,
@@ -242,9 +241,11 @@ p <- plot_data_hf %>%
 p
 ```
 
+As it is shown in the boxplots, reference-free methods tend to overestimate the tumor fraction, especially at high tumor fractions.
+
 ```{r}
 # Create the main directory to save the plots
-output_dir <- "../plots/04_refree_vs_refbased/boxplots"
+output_dir <- "../plots/04_refree_vs_refbased/actual_predictions"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 output_file <- file.path(output_dir, paste0("boxplot_predictions_wgbs_hf.png"))

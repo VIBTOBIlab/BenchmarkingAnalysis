@@ -23,6 +23,7 @@ Import the necessary libraries for the analysis
 ```{r message=FALSE, warning=FALSE}
 library(ggpubr)
 library(dplyr)
+library(ggplot2)
 library(tidyverse)
 library(pROC)
 ```
@@ -68,7 +69,7 @@ We will start analysing the WGBS in silico mixtures, to then proceed to the RRBS
 bench_wgbs <- subset(bench.res,bench.res$seq_method=="wgbs")
 ```
 
-We can now compute the AUC-ROC score. Differently from the 01_ tutorial, here we will use the raw AUC-ROC score without min-max scaling it across deconvolution tools. This is necessary since we want to check, within each deconvolution tool, whether the performance changes varying the sequencing depth.
+We can now compute the AUC-ROC score. Differently from the [01 tutorial](01_heatmaps_all_combinations.Rmd), here we will use the raw AUC-ROC score without min-max scaling it across deconvolution tools. This is necessary since we want to check, within each deconvolution tool, whether the performance changes varying the sequencing depth.
 
 ```{r}
 # Create a new dataset dataframe where to store AUC-ROC results
@@ -98,7 +99,7 @@ for (type in unique(bench_wgbs$tumor_type)) {
                    dmr_tool == dmrtool &
                    deconv_tool == deconv)
 
-          # Compute the AUC-ROC score per combination and concatanate it to the final dataframe
+          # Compute the AUC-ROC score per combination and concatenate it to the final dataframe
           auc_single_combination <- compute_auc(filt_df, fraction, deconv)
           aucroc_data <- rbind(aucroc_data, auc_single_combination)
         }
@@ -220,7 +221,7 @@ ggsave(output_file, plot = p1, width = 8, height = 6)
 
 ## RRBS
 
-We can try proceed with the RRBS dataset, in the same way as we did with the WGBS dataset.
+We can proceed with the RRBS dataset, in the same way as we did with the WGBS dataset.
 
 ```{r}
 bench_rrbs <- subset(bench.res,bench.res$seq_method=="rrbs")
@@ -303,7 +304,7 @@ for (tum in unique(auc_rrbs$tumor_type)) {
     stat_compare_means(
       method = "wilcox.test", comparisons = my_comparisons,
       p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
-      method.args = list(alternative="greater"),
+      method.args = list(alternative="less"),
       label.y = c(1, 1.05, 1.10, 1.15), size = 3
     ) +
     labs(
@@ -322,7 +323,7 @@ for (tum in unique(auc_rrbs$tumor_type)) {
   
   # Save the plot as an image
   output_file <- file.path(output_dir, paste0("robustness_AUC_RRBS_",tum,".svg"))
-  ggsave(output_file, plot = p1, width = 8, height = 6) 
+  ggsave(output_file, plot = p1, width = 8, height = 6)
 }
 ```
 
@@ -347,7 +348,7 @@ p1 <- ggplot(df, aes(x = seq_depth, y = AUC, fill = seq_depth)) +
     stat_compare_means(
       method = "wilcox.test", comparisons = my_comparisons,
       p.adjust.method = "BH", label = "adj.p", hide.ns = F,                   
-      method.args = list(alternative="greater"),
+      method.args = list(alternative="less"),
       label.y = c(1, 1.05, 1.10, 1.15), size = 3
     ) +
     labs(
