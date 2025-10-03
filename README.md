@@ -55,7 +55,7 @@ install.packages(c(
   "tidyverse", "dplyr", "tidyr", "stringr",
   "ggplot2", "ggpubr", "patchwork", "pROC",
   "metrics", "devtools", "knitr", "rmarkdown", 
-  "remotes", "funkyheatmap", "svglite"
+  "remotes", "funkyheatmap", "svglite", "tidytext"
 ))
 
 # Install Bioconductor packages
@@ -110,6 +110,10 @@ The analyses should be run in the following order. Each notebook generates plots
    * Analyzes and visualizes **scalability results**.
    * Outputs to `plots/07_scalability/`.
 
+8. **08_preciseness_tumor_fractions.Rmd**
+
+   * Analyzes and visualizes **RMSE and SCC for tumor fraction prediction accuracy**.
+   * Outputs to `plots/08_preciseness/`.
 ---
 
 ## Summary of Output Structure
@@ -125,6 +129,7 @@ plots/
 ├── 05_additional_plots/         # Ranking and additional visualizations
 ├── 06_funkyheatmap/             # Funkyheatmap figure from publication
 └── 07_scalability/              # Scalability analysis plots
+└── 08_preciseness/              # Preciseness analysis plots
 ```
 
 ---

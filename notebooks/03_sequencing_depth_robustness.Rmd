@@ -69,7 +69,7 @@ We will start analysing the WGBS in silico mixtures, to then proceed to the RRBS
 bench_wgbs <- subset(bench.res,bench.res$seq_method=="wgbs")
 ```
 
-We can now compute the AUC-ROC score. Differently from the [01 tutorial](01_heatmaps_all_combinations.Rmd), here we will use the raw AUC-ROC score without min-max scaling it across deconvolution tools. This is necessary since we want to check, within each deconvolution tool, whether the performance changes varying the sequencing depth.
+We can now compute the AUC-ROC score. Differently from other notebooks, here we will use the raw AUC-ROC score without min-max scaling it across deconvolution tools. This is necessary since we want to check, within each deconvolution tool, whether the performance changes varying the sequencing depth.
 
 ```{r}
 # Create a new dataset dataframe where to store AUC-ROC results
@@ -129,8 +129,8 @@ auc_wgbs$seq_depth <- factor(auc_wgbs$seq_depth, levels = c("62M", "183M", "310M
 # Define comparisons
 my_comparisons <- list(
   c("62M", "183M"),
-  c("62M", "310M"),
-  c("62M", "620M")
+  c("183M", "310M"),
+  c("310M", "620M")
 )
 
 # Loop over the tumor types
@@ -147,7 +147,7 @@ for (tum in unique(auc_wgbs$tumor_type)) {
       method = "wilcox.test", comparisons = my_comparisons,
       p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
       method.args = list(alternative="less"),
-      label.y = c(1, 1.05, 1.10), size = 3
+      label.y = c(1, 1.05, 1.10, 1.15), size = 3
     ) +
     labs(
       title = paste0("WGBS (",tum,") dataset"),
@@ -160,7 +160,7 @@ for (tum in unique(auc_wgbs$tumor_type)) {
           panel.grid.major.y = element_line(color = "grey90"),
           panel.grid.minor.y = element_line(color = "grey90")) +
     scale_fill_manual(values = c("62M"="#FAEBDDFF","183M"="#F69C73FF","310M"="#A11A5BFF","620M"="#03051AFF")) +
-    ylim(0.5,1.2)
+    ylim(0.5,1.15)
   print(p1)
   
   # Save the plot as an image
@@ -178,12 +178,12 @@ auc_wgbs$seq_depth <- factor(auc_wgbs$seq_depth, levels = c("62M", "183M", "310M
 # Define comparisons
 my_comparisons <- list(
   c("62M", "183M"),
-  c("62M", "310M"),
-  c("62M", "620M")
+  c("183M", "310M"),
+  c("310M", "620M")
 )
   
 # Plot with adjusted p-values (FDR) and significance only if p.adj < 0.05
-p1 <- ggplot(df, aes(x = seq_depth, y = AUC, fill = seq_depth)) +
+p1 <- ggplot(auc_wgbs, aes(x = seq_depth, y = AUC, fill = seq_depth)) +
     geom_boxplot(outlier.shape = NA) +
     facet_wrap(~ deconv_tool, ncol = 5) +
     stat_compare_means(
@@ -203,7 +203,7 @@ p1 <- ggplot(df, aes(x = seq_depth, y = AUC, fill = seq_depth)) +
           panel.grid.major.y = element_line(color = "grey90"),
           panel.grid.minor.y = element_line(color = "grey90")) +
     scale_fill_manual(values = c("62M"="#FAEBDDFF","183M"="#F69C73FF","310M"="#A11A5BFF","620M"="#03051AFF")) +
-    ylim(0.5,1.2)
+    ylim(0.5,1.15)
 p1
 ```
 
@@ -286,9 +286,10 @@ auc_rrbs$seq_depth <- factor(auc_rrbs$seq_depth, levels = c("2M", "5M", "10M", "
 # Define comparisons
 my_comparisons <- list(
   c("2M", "5M"),
-  c("2M", "10M"),
-  c("2M", "15M"),
-  c("2M", "20M")
+  c("5M", "10M"),
+  c("10M","15M"),
+  c("10M", "20M"),
+  c("15M", "20M")
 )
 
 # Loop over the tumor types
@@ -305,7 +306,7 @@ for (tum in unique(auc_rrbs$tumor_type)) {
       method = "wilcox.test", comparisons = my_comparisons,
       p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
       method.args = list(alternative="less"),
-      label.y = c(1, 1.05, 1.10, 1.15), size = 3
+      label.y = c(1, 1.05, 1.10, 1.15, 1.20), size = 3
     ) +
     labs(
       title = paste0("RRBS (",tum,") dataset"),
@@ -318,7 +319,7 @@ for (tum in unique(auc_rrbs$tumor_type)) {
           panel.grid.major.y = element_line(color = "grey90"),
           panel.grid.minor.y = element_line(color = "grey90")) +
     scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF")) +
-    ylim(0.5,1.2)
+    ylim(0.5,1.25)
   print(p1)
   
   # Save the plot as an image
@@ -336,20 +337,21 @@ auc_rrbs$seq_depth <- factor(auc_rrbs$seq_depth, levels = c("2M", "5M", "10M", "
 # Define comparisons
 my_comparisons <- list(
   c("2M", "5M"),
-  c("2M", "10M"),
-  c("2M", "15M"),
-  c("2M", "20M")
+  c("5M", "10M"),
+  c("10M","15M"),
+  c("10M","20M"),
+  c("15M", "20M")
 )
   
 # Plot with adjusted p-values (FDR) and significance only if p.adj < 0.05
-p1 <- ggplot(df, aes(x = seq_depth, y = AUC, fill = seq_depth)) +
+p1 <- ggplot(auc_rrbs, aes(x = seq_depth, y = AUC, fill = seq_depth)) +
     geom_boxplot(outlier.shape = NA) +
     facet_wrap(~ deconv_tool, ncol = 5) +
     stat_compare_means(
       method = "wilcox.test", comparisons = my_comparisons,
       p.adjust.method = "BH", label = "adj.p", hide.ns = F,                   
       method.args = list(alternative="less"),
-      label.y = c(1, 1.05, 1.10, 1.15), size = 3
+      label.y = c(1, 1.05, 1.10, 1.15, 1.20), size = 3
     ) +
     labs(
       title = "Entire RRBS dataset",
@@ -362,7 +364,7 @@ p1 <- ggplot(df, aes(x = seq_depth, y = AUC, fill = seq_depth)) +
           panel.grid.major.y = element_line(color = "grey90"),
           panel.grid.minor.y = element_line(color = "grey90")) +
     scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF")) +
-    ylim(0.5,1.2)
+    ylim(0.5,1.25)
 p1
 ```
 

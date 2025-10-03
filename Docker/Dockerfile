@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 RUN R -e "install.packages(c('pak','metrics'))"
 
 # Install CRAN packages
-RUN R -e "pak::pkg_install(c('tidyverse', 'dplyr', 'tidyr', 'stringr','ggplot2', 'ggpubr', 'patchwork', 'pROC', 'devtools', 'knitr', 'rmarkdown', 'remotes', 'funkyheatmap', 'svglite', 'BiocManager'))"
+RUN R -e "pak::pkg_install(c('tidyverse', 'dplyr', 'tidyr', 'stringr','ggplot2', 'ggpubr', 'patchwork', 'pROC', 'devtools', 'knitr', 'rmarkdown', 'remotes', 'funkyheatmap','tidytext', 'svglite', 'BiocManager'))"
 
 # Install Bioconductor packages
 RUN R -e "BiocManager::install(c('ComplexHeatmap', 'circlize'))"
