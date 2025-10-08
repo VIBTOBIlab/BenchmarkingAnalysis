@@ -65,6 +65,7 @@ bench <- subset(df, !(is.na(predicted_tf)))
 in_silico_wgbs <- subset(bench, bench$seq_method == "wgbs")
 in_silico_rrbs <- subset(bench, bench$seq_method == "rrbs")
 in_silico_cfrrbs <- subset(bench, bench$seq_method == "cfrrbs" & bench$mixture_type == "in_silico")
+in_vitro_cfrrbs <- subset(bench, bench$mixture_type == "in_vitro" & !grepl("-subsamp", bench$sample) & bench$deconv_tool!= "Methyl_Resolver" & bench$expected_tf < 0.6)
 ```
 
 
@@ -343,7 +344,7 @@ score_rrbs <- score_rrbs %>%
 
 ### RRBS-CL in silico
 
-And for the RRBSE-CL in silico
+And for the cfRRBS in silico and in vitro
 
 ```{r}
 # Create a new dataset dataframe where to store AUC-ROC results
@@ -469,6 +470,116 @@ score_cfrrbs <- score_cfrrbs %>%
   summarise(Score = Score_minmax, .groups = "drop")
 ```
 
+### RRBS-CL in vitro
+
+Compute the AUC values per tumoral fraction, then make the make to have a mean AUC, then compute the min-max scaled AUC across tools at each seq_depth, DMR tools and tumor_type.
+
+
+```{r message=FALSE, warning=FALSE}
+aucroc_data <- data.frame()
+# Select the samples with tumoral fractions > 0%
+unique_fractions <- unique(in_vitro_cfrrbs$expected_tf)
+unique_fractions <- subset(unique_fractions, unique_fractions != 0)
+
+# Loop over the type of tumors
+for (type in unique(in_vitro_cfrrbs$tumor_type)) {
+  
+  # Loop over sequencing depths
+  filt_tum <- subset(in_vitro_cfrrbs, in_vitro_cfrrbs$tumor_type == type)
+  for (dmrtool in unique(filt_tum$dmr_tool)) {
+      
+    # Loop over the deconvolution tools
+    for (deconv in unique(filt_tum$deconv_tool)) {
+  
+      # Loop over the tumoral fractions specified above
+      for (fraction in unique_fractions) {
+        
+        filt_df <- filt_tum %>%
+          filter(expected_tf %in% c(0,fraction) & 
+                 dmr_tool == dmrtool &
+                 deconv_tool == deconv)
+
+        # Compute the AUC-ROC score per combination and concatanate it to the final dataframe
+        auc_single_combination <- compute_auc(filt_df, fraction, deconv)
+        aucroc_data <- rbind(aucroc_data, auc_single_combination)
+      }
+    }
+  }
+}
+auc_cfrrbs_invitro <- aucroc_data %>%
+    group_by(deconv_tool, dmr_tool, tumor_type, expected_tf) %>%
+    summarize(AUC=mean(auc),.groups = "drop") %>%
+    group_by(deconv_tool, dmr_tool, tumor_type) %>%
+    summarize(meanAUC=mean(AUC),.groups = "drop")  %>%
+    group_by(dmr_tool, tumor_type) %>%
+    mutate(
+      AUC_min = min(meanAUC),
+      AUC_max = max(meanAUC),
+      AUC_minmax = (meanAUC - AUC_min) / (AUC_max - AUC_min)
+    ) %>%
+    group_by(deconv_tool, dmr_tool, tumor_type) %>%
+    summarise(AUC = AUC_minmax, .groups = "drop")
+
+```
+
+
+```{r}
+# Compute the metrics: modify the RMSE= 1) nrmse 2) rmse 3) rmse of logit(values)
+scc_cfrrbs_invitro <- in_vitro_cfrrbs %>%
+  group_by(deconv_tool, dmr_tool, tumor_type) %>%
+  summarise(SCC = cor(expected_tf, predicted_tf, method = "spearman"), .groups = "drop") %>%
+  ungroup() %>%
+  group_by(dmr_tool, tumor_type) %>%
+  mutate(
+    SCC_min = min(SCC),
+    SCC_max = max(SCC),
+    SCC_minmax = (SCC - SCC_min) / (SCC_max - SCC_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, tumor_type) %>%
+  summarise(SCC = mean(SCC_minmax), .groups = "drop")
+```
+
+
+```{r}
+rmse_cfrrbs_invitro <- in_vitro_cfrrbs %>%
+  filter(expected_tf != 0) %>%
+  group_by(deconv_tool, dmr_tool, tumor_type, expected_tf) %>%
+  mutate(RMSE = rmse(expected_tf, predicted_tf)) %>%
+  ungroup() %>%
+  group_by(dmr_tool, tumor_type, expected_tf) %>%
+  mutate(
+    RMSE_min = min(RMSE),
+    RMSE_max = max(RMSE),
+    RMSE_minmax = (RMSE - RMSE_min) / (RMSE_max - RMSE_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, tumor_type) %>%
+  summarise(RMSE = 1-mean(RMSE_minmax), .groups = "drop")
+```
+
+
+```{r}
+# Compute the number of zeros and non-zero observations
+num.zeros <- nrow(in_vitro_cfrrbs[in_vitro_cfrrbs$expected_tf==0,])
+num.nonzeros <- nrow(in_vitro_cfrrbs[in_vitro_cfrrbs$expected_tf!=0,])
+
+# Compute the total number of observation
+tot <- num.nonzeros + num.zeros
+
+# Compute the Score
+score_cfrrbs_invitro <- rmse_cfrrbs_invitro[,c("deconv_tool","dmr_tool","tumor_type")] 
+score_cfrrbs_invitro$Score <- ( num.nonzeros/tot)*rmse_cfrrbs_invitro$RMSE + scc_cfrrbs_invitro$SCC + auc_cfrrbs_invitro$AUC
+score_cfrrbs_invitro <- score_cfrrbs_invitro %>%
+  group_by(dmr_tool,tumor_type) %>%
+    mutate(
+    Score_min = min(Score),
+    Score_max = max(Score),
+    Score_minmax = (Score - Score_min) / (Score_max - Score_min)
+  ) %>%
+  group_by(deconv_tool, dmr_tool, tumor_type) %>%
+  summarise(Score = Score_minmax, .groups = "drop")
+```
+
+
 ## Aggregate the metrics
 
 We will now aggregate the metrics of the datasets according to different variables. We will aggregate per metric to have an overall per metric performance. We will also aggregate per DMR tool, per sequencing depth and per dataset. We will give a different weight to each dataset to balance the difference in terms of sequencing technology. Since there is only 1 WGBS dataset and 3 RRBS-like datasets, we will give the weight of 1 to the WGBS, 0.5 to the RRBS and 0.25 to both the in-silico and in-vitro cfRRBS dataset.
@@ -478,29 +589,36 @@ We will now aggregate the metrics of the datasets according to different variabl
 Here we will calculate the mean RMSE per deconvolution tool per dataset and then aggregate the mean RMSE using the weighted mean.
 
 ```{r}
-# Compute the mean RMSE for WGBS-TT
+# Compute the mean RMSE for WGBS
 aggr_rmse_wgbs <- rmse_wgbs %>%
   group_by(deconv_tool) %>%
   summarise(RMSE = mean(RMSE))
 aggr_rmse_wgbs$weight <- 1
 
-# For RRBS-TT
+# For RRBS
 aggr_rmse_rrbs <- rmse_rrbs %>%
   group_by(deconv_tool) %>%
   summarise(RMSE = mean(RMSE))
 aggr_rmse_rrbs$weight <- 0.5
 
-# For RRBS-CL
+# For in-silico cfRRBS
 aggr_rmse_cfrrbs <- rmse_cfrrbs %>%
   group_by(deconv_tool) %>%
   summarise(RMSE = mean(RMSE))
 aggr_rmse_cfrrbs$weight <- 0.25
 
+# For in-vitro cfRRBS
+aggr_rmse_cfrrbs_invitro <- rmse_cfrrbs_invitro %>%
+  group_by(deconv_tool) %>%
+  summarise(RMSE = mean(RMSE))
+aggr_rmse_cfrrbs_invitro$weight <- 0.25
+
 # Concatanate the dataframes into 1 
 aggr_rmse <- bind_rows(
   aggr_rmse_wgbs,
   aggr_rmse_rrbs,
-  aggr_rmse_cfrrbs
+  aggr_rmse_cfrrbs,
+  aggr_rmse_cfrrbs_invitro
 )
 
 # Compute the weighted mean
@@ -508,34 +626,43 @@ funkyheat_permetric_rmse <- aggr_rmse %>%
   group_by(deconv_tool) %>%
   summarise(RMSE = weighted.mean(RMSE, w = weight)) %>%
   arrange(desc(RMSE))
+
 ```
+
 
 Do the same for the SCC
 
 ```{r}
-# Compute the mean SCC for WGBS-TT
+# Compute the mean SCC for WGBS
 aggr_scc_wgbs <- scc_wgbs %>%
   group_by(deconv_tool) %>%
   summarise(SCC = mean(SCC))
 aggr_scc_wgbs$weight <- 1
 
-# RRBS-TT
+# RRBS
 aggr_scc_rrbs <- scc_rrbs %>%
   group_by(deconv_tool) %>%
   summarise(SCC = mean(SCC))
 aggr_scc_rrbs$weight <- 0.5
 
-# RRBS-CL
+# in-silico cfRRBS
 aggr_scc_cfrrbs <- scc_cfrrbs %>%
   group_by(deconv_tool) %>%
   summarise(SCC = mean(SCC))
 aggr_scc_cfrrbs$weight <- 0.25
 
+# in-vitro cfRRBS
+aggr_scc_cfrrbs_invitro <- scc_cfrrbs_invitro %>%
+  group_by(deconv_tool) %>%
+  summarise(SCC = mean(SCC))
+aggr_scc_cfrrbs_invitro$weight <- 0.25
+
 # Concatanate
 aggr_scc <- bind_rows(
   aggr_scc_wgbs,
   aggr_scc_rrbs,
-  aggr_scc_cfrrbs
+  aggr_scc_cfrrbs,
+  aggr_scc_cfrrbs_invitro
 )
 
 # Weighted mean
@@ -545,32 +672,40 @@ funkyheat_permetric_scc <- aggr_scc %>%
   arrange(desc(SCC))
 ```
 
+
 And the same for the AUC-ROC score
 
 ```{r}
-# Compute the mean AUC-ROC score for WGBS-TT
+# Compute the mean AUC-ROC score for WGBS
 aggr_auc_wgbs <- auc_wgbs %>%
   group_by(deconv_tool) %>%
   summarise(AUC = mean(AUC))
 aggr_auc_wgbs$weight <- 1
 
-# RRBS-TT
+# RRBS
 aggr_auc_rrbs <- auc_rrbs %>%
   group_by(deconv_tool) %>%
   summarise(AUC = mean(AUC))
 aggr_auc_rrbs$weight <- 0.5
 
-# RRBS-CL
+# in-silico cfRRBS
 aggr_auc_cfrrbs <- auc_cfrrbs %>%
   group_by(deconv_tool) %>%
   summarise(AUC = mean(AUC))
 aggr_auc_cfrrbs$weight <- 0.25
 
+# in-vitro cfRRBS
+aggr_auc_cfrrbs_invitro <- auc_cfrrbs_invitro %>%
+  group_by(deconv_tool) %>%
+  summarise(AUC = mean(AUC))
+aggr_auc_cfrrbs_invitro$weight <- 0.25
+
 # Concatanate
 aggr_auc <- bind_rows(
   aggr_auc_wgbs,
   aggr_auc_rrbs,
-  aggr_auc_cfrrbs
+  aggr_auc_cfrrbs,
+  aggr_auc_cfrrbs_invitro
 )
 
 # Weighted mean
@@ -582,20 +717,22 @@ funkyheat_permetric_auc <- aggr_auc %>%
 
 And for the LoD
 
+And the same for the AUC-ROC score
+
 ```{r}
-# Compute the mean AUC-ROC score for WGBS-TT
+# Compute the mean AUC-ROC score for WGBS
 aggr_lod_wgbs <- lod_wgbs %>%
   group_by(deconv_tool) %>%
   summarise(LoD = mean(LoD))
 aggr_lod_wgbs$weight <- 1
 
-# RRBS-TT
+# RRBS
 aggr_lod_rrbs <- lod_rrbs %>%
   group_by(deconv_tool) %>%
   summarise(LoD = mean(LoD))
 aggr_lod_rrbs$weight <- 0.5
 
-# RRBS-CL
+# in-silico cfRRBS
 aggr_lod_cfrrbs <- lod_cfrrbs %>%
   group_by(deconv_tool) %>%
   summarise(LoD = mean(LoD))
@@ -621,7 +758,7 @@ funkyheat_permetric_lod <- aggr_lod %>%
 We will now do the same as above, but aggregating per DMR tool. In this case, we will use the overall Score as a metric of performance for the aggregation per DMR tool.
 
 ```{r}
-# Compute the mean Score for WGBS-TT
+# Compute the mean Score for WGBS
 aggr_score_wgbs <- score_wgbs %>%
   group_by(deconv_tool,dmr_tool) %>%
   summarise(Score = mean(Score)) %>%
@@ -631,7 +768,7 @@ aggr_score_wgbs <- score_wgbs %>%
   )
 aggr_score_wgbs$weight <- 1
 
-# RRBS-TT
+# RRBS
 aggr_score_rrbs <- score_rrbs %>%
   group_by(deconv_tool,dmr_tool) %>%
   summarise(Score = mean(Score)) %>%
@@ -641,7 +778,7 @@ aggr_score_rrbs <- score_rrbs %>%
   )
 aggr_score_rrbs$weight <- 0.5
 
-# RRBS-CL
+# in-silico cfRRBS
 aggr_score_cfrrbs <- score_cfrrbs %>%
   group_by(deconv_tool,dmr_tool) %>%
   summarise(Score = mean(Score)) %>%
@@ -651,11 +788,22 @@ aggr_score_cfrrbs <- score_cfrrbs %>%
   )
 aggr_score_cfrrbs$weight <- 0.25
 
+# in-vitro cfRRBS
+aggr_score_cfrrbs_invitro <- score_cfrrbs_invitro %>%
+  group_by(deconv_tool,dmr_tool) %>%
+  summarise(Score = mean(Score)) %>%
+  pivot_wider(
+    names_from = dmr_tool,
+    values_from = Score
+  )
+aggr_score_cfrrbs_invitro$weight <- 0.25
+
 # Concatanate
 aggr_score <- bind_rows(
   aggr_score_wgbs,
   aggr_score_rrbs,
-  aggr_score_cfrrbs
+  aggr_score_cfrrbs,
+  aggr_score_cfrrbs_invitro
 )
 
 # Weighted mean
@@ -673,25 +821,31 @@ funkyheat_perdmrtool_score <- aggr_score %>%
 We can now aggregate per dataset, again using the overall Score.
 
 ```{r}
-# Compute the mean Score for WGBS-TT
+# Compute the mean Score for WGBS
 aggr_score_wgbs <- score_wgbs %>%
   group_by(deconv_tool) %>%
-  summarise(WGBS_TT = mean(Score))
+  summarise(WGBS = mean(Score))
 
-# RRBS-TT
+# RRBS
 aggr_score_rrbs <- score_rrbs %>%
   group_by(deconv_tool) %>%
-  summarise(RRBS_TT = mean(Score))
+  summarise(RRBS = mean(Score))
 
-# RRBS-CL
+# cfRRBS in silico
 aggr_score_cfrrbs <- score_cfrrbs %>%
   group_by(deconv_tool) %>%
-  summarise(RRBS_CL = mean(Score))
+  summarise(cfRRBS_insilico = mean(Score))
+
+# cfRRBS in vitro
+aggr_score_cfrrbs_invitro <- score_cfrrbs_invitro %>%
+  group_by(deconv_tool) %>%
+  summarise(cfRRBS_invitro = mean(Score))
 
 # Concatanate
 funkyheat_perdataset_score <- aggr_score_wgbs %>%
   inner_join(aggr_score_rrbs, by = "deconv_tool") %>%
-  inner_join(aggr_score_cfrrbs, by = "deconv_tool")
+  inner_join(aggr_score_cfrrbs, by = "deconv_tool") %>%
+  inner_join(aggr_score_cfrrbs_invitro, by = "deconv_tool")
 ```
 
 
@@ -700,34 +854,34 @@ funkyheat_perdataset_score <- aggr_score_wgbs %>%
 Now we will aggregate per sequencing depth. Since WGBS and RRBS have different sequencing depths, we will aggregate within each dataset
 
 ```{r}
-# Compute the mean Score for WGBS-TT seq depth
+# Compute the mean Score for WGBS seq depth
 aggr_score_perseqdepth_wgbs <- score_wgbs %>%
   group_by(deconv_tool, seq_depth) %>%
-  summarise(WGBS_TT = mean(Score)) %>%
+  summarise(WGBS = mean(Score)) %>%
   pivot_wider(
     names_from = seq_depth,
-    values_from = WGBS_TT,
-    names_glue = "WGBS_TT_{seq_depth}"
+    values_from = WGBS,
+    names_glue = "WGBS_{seq_depth}"
   )
 
-# RRBS-TT
+# RRBS
 aggr_score_perseqdepth_rrbs <- score_rrbs %>%
   group_by(deconv_tool, seq_depth) %>%
-  summarise(RRBS_TT = mean(Score)) %>%
+  summarise(RRBS = mean(Score)) %>%
   pivot_wider(
     names_from = seq_depth,
-    values_from = RRBS_TT,
-    names_glue = "RRBS_TT_{seq_depth}"
+    values_from = RRBS,
+    names_glue = "RRBS_{seq_depth}"
   )
 
-# RRBS-CL
+# cfRRBS in silico
 aggr_score_perseqdepth_cfrrbs <- score_cfrrbs %>%
   group_by(deconv_tool, seq_depth) %>%
-  summarise(RRBS_CL = mean(Score)) %>%
+  summarise(cfRRBS_insilico = mean(Score)) %>%
   pivot_wider(
     names_from = seq_depth,
-    values_from = RRBS_CL,
-    names_glue = "RRBS_CL_{seq_depth}"
+    values_from = cfRRBS_insilico,
+    names_glue = "cfRRBS_{seq_depth}"
   )
 
 # cfRRBS in vitro
@@ -787,18 +941,23 @@ aggr_scalab_score <- aggr_scalab_score[, c("deconv_tool","Score")]
 We can finally compute the overall Score across the different datasets, including the scalability Score.
 
 ```{r}
-# WGBS-TT
+# WGBS
 overall_wgbs_score <- score_wgbs %>%
   group_by(deconv_tool) %>%
   summarise(Score = mean(Score))
 
-# RRBS-TT
+# RRBS
 overall_rrbs_score <- score_rrbs %>%
   group_by(deconv_tool) %>%
   summarise(Score = mean(Score))
 
-# RRBS-CL
+# cfRRBS in silico
 overall_cfrrbs_score <- score_cfrrbs %>%
+  group_by(deconv_tool) %>%
+  summarise(Score = mean(Score))
+
+# cfRRBS in vitro
+overall_cfrrbs_invitro_score <- score_cfrrbs_invitro %>%
   group_by(deconv_tool) %>%
   summarise(Score = mean(Score))
 
@@ -806,6 +965,7 @@ overall_cfrrbs_score <- score_cfrrbs %>%
 overall_wgbs_score$weight <- 1
 overall_rrbs_score$weight <- 0.5
 overall_cfrrbs_score$weight <- 0.25
+overall_cfrrbs_invitro_score$weight <- 0.25
 aggr_scalab_score$weight <- 0.1
 ```
 
@@ -817,6 +977,7 @@ all_scores <- bind_rows(
   overall_wgbs_score,
   overall_rrbs_score,
   overall_cfrrbs_score,
+  overall_cfrrbs_invitro_score,
   aggr_scalab_score
 )
 
@@ -880,40 +1041,43 @@ And here we define the groups to plot, that have to match the final dataframe (d
 
 ```{r}
 column_info <- tribble(
-  ~id,                  ~group,                    ~name,                  ~geom,        ~palette,    ~options,
-  "deconv_tool",        "Method",                  "",                     "text",       "overall",   lst(hjust = 0, width = 6),
-  "Statistical_Method", "Method",                  "Statistical method",   "text",       "overall",   lst(width = 2),
-  "Availability",       "Method",                  "Availability",         "image",      "overall",   lst(width = 1.5),
-  "RMSE",               "Summary",                 "1-RMSE",               "bar",        "benchmark", lst(),
-  "SCC",                "Summary",                 "SCC",                  "bar",        "benchmark", lst(),
-  "AUC",                "Summary",                 "AUC",                  "bar",        "benchmark", lst(),
-  "LoD",                "Summary",                 "LoD",                  "bar",        "benchmark", lst(),
-  "DMRfinder",          "Per DMRtool",             "DMRfinder",            "funkyrect",  "benchmark", lst(),
-  "limma",              "Per DMRtool",             "limma",                "funkyrect",  "benchmark", lst(),
-  "wgbstools",          "Per DMRtool",             "wgbstools",            "funkyrect",  "benchmark", lst(),
-  "WGBS_TT",            "Per dataset",             "WGBS-TT",              "funkyrect",  "benchmark", lst(),
-  "RRBS_TT",            "Per dataset",             "RRBS-TT",              "funkyrect",  "benchmark", lst(),
-  "RRBS_CL",            "Per dataset",             "RRBS-CL",              "funkyrect",  "benchmark", lst(),
-  "WGBS_TT_62M",        "Per SeqDepth (WGBS-TT)",  "62M",                  "funkyrect",  "benchmark", lst(),
-  "WGBS_TT_183M",       "Per SeqDepth (WGBS-TT)",  "183M",                 "funkyrect",  "benchmark", lst(),
-  "WGBS_TT_310M",       "Per SeqDepth (WGBS-TT)",  "320M",                 "funkyrect",  "benchmark", lst(),
-  "WGBS_TT_620M",       "Per SeqDepth (WGBS-TT)",  "620M",                 "funkyrect",  "benchmark", lst(),
-  "RRBS_TT_2M",         "Per SeqDepth (RRBS-TT)",  "2M",                   "funkyrect",  "benchmark", lst(),
-  "RRBS_TT_5M",         "Per SeqDepth (RRBS-TT)",  "5M",                   "funkyrect",  "benchmark", lst(),
-  "RRBS_TT_10M",        "Per SeqDepth (RRBS-TT)",  "10M",                  "funkyrect",  "benchmark", lst(),
-  "RRBS_TT_15M",        "Per SeqDepth (RRBS-TT)",  "15M",                  "funkyrect",  "benchmark", lst(),
-  "RRBS_TT_20M",        "Per SeqDepth (RRBS-TT)",  "20M",                  "funkyrect",  "benchmark", lst(),
-  "RRBS_CL_2M",         "Per SeqDepth (RRBS-CL)",  "2M",                   "funkyrect",  "benchmark", lst(),
-  "RRBS_CL_5M",         "Per SeqDepth (RRBS-CL)",  "5M",                   "funkyrect",  "benchmark", lst(),
-  "RRBS_CL_10M",        "Per SeqDepth (RRBS-CL)",  "10M",                  "funkyrect",  "benchmark", lst(),
-  "RRBS_CL_15M",        "Per SeqDepth (RRBS-CL)",  "15M",                  "funkyrect",  "benchmark", lst(),
-  "RRBS_CL_20M",        "Per SeqDepth (RRBS-CL)",  "20M",                  "funkyrect",  "benchmark", lst(),
-  "Memory",             "Scalability",             "Memory (MB)",          "rect",       "scaling",   lst(width = 1.7, scale_column = T),
-  "Memory",             "Scalability",             "Memory (MB)",          "text",       "black",     lst(overlay = TRUE),
-  "Runtime",            "Scalability",             "Runtime (sec)",        "rect",       "scaling",   lst(width = 1.7, scale_column = T),
-  "Runtime",            "Scalability",             "Runtime (sec)",        "text",       "black",     lst(overlay = TRUE),
-  "Overall_Score",      "Final Ranking",           "Overall score",        "bar",        "stability", lst(width = 2.4),
-  "Rank",               "Final Ranking",           "Ranking",              "text",       "stability", lst(width = 1.8),
+  ~id,                  ~group,               ~name,                  ~geom,        ~palette,    ~options,
+  "deconv_tool",        "Method",             "",                     "text",       "overall",   lst(hjust = 0, width = 6),
+  "Statistical_Method", "Method",             "Statistical method",   "text",       "overall",   lst(width = 2),
+  "Availability",       "Method",             "Availability",         "image",      "overall",   lst(width = 1.5),
+  "RMSE",               "Summary",            "1-RMSE",               "bar",        "benchmark",        lst(),
+  "SCC",                "Summary",            "SCC",                  "bar",        "benchmark",        lst(),
+  "AUC",                "Summary",            "AUC",                  "bar",        "benchmark",        lst(),
+  "LoD",                "Summary",            "LoD",                  "bar",        "benchmark",        lst(),
+  "DMRfinder",          "Per DMRtool",        "DMRfinder",            "funkyrect",  "benchmark", lst(),
+  "limma",              "Per DMRtool",        "limma",                "funkyrect",  "benchmark", lst(),
+  "wgbstools",          "Per DMRtool",        "wgbstools",            "funkyrect",  "benchmark", lst(),
+  "WGBS",               "Per dataset",        "WGBS",                 "funkyrect",  "benchmark", lst(),
+  "RRBS",               "Per dataset",        "RRBS",                 "funkyrect",  "benchmark", lst(),
+  "cfRRBS_insilico",    "Per dataset",        "cfRRBS (in-silico)",   "funkyrect",  "benchmark", lst(),
+  "cfRRBS_invitro",     "Per dataset",        "cfRRBS (in-vitro)",    "funkyrect",  "benchmark", lst(),
+  "WGBS_62M",           "Per SeqDepth (WGBS)","62M",                  "funkyrect",  "benchmark", lst(),
+  "WGBS_183M",          "Per SeqDepth (WGBS)","183M",                 "funkyrect",  "benchmark", lst(),
+  "WGBS_310M",          "Per SeqDepth (WGBS)","320M",                 "funkyrect",  "benchmark", lst(),
+  "WGBS_620M",          "Per SeqDepth (WGBS)","620M",                 "funkyrect",  "benchmark", lst(),
+  "RRBS_2M",            "Per SeqDepth (RRBS)","2M",                   "funkyrect",  "benchmark", lst(),
+  "RRBS_5M",            "Per SeqDepth (RRBS)","5M",                   "funkyrect",  "benchmark", lst(),
+  "RRBS_10M",           "Per SeqDepth (RRBS)","10M",                  "funkyrect",  "benchmark", lst(),
+  "RRBS_15M",           "Per SeqDepth (RRBS)","15M",                  "funkyrect",  "benchmark", lst(),
+  "RRBS_20M",           "Per SeqDepth (RRBS)","20M",                  "funkyrect",  "benchmark", lst(),
+  "cfRRBS_2M",          "Per SeqDepth (cfRRBS)","2M",                   "funkyrect",  "benchmark", lst(),
+  "cfRRBS_5M",          "Per SeqDepth (cfRRBS)","5M",                 "funkyrect",  "benchmark", lst(),
+  "cfRRBS_10M",         "Per SeqDepth (cfRRBS)","10M",                "funkyrect",  "benchmark", lst(),
+  "cfRRBS_15M",         "Per SeqDepth (cfRRBS)","15M",                "funkyrect",  "benchmark", lst(),
+  "cfRRBS_20M",         "Per SeqDepth (cfRRBS)","20M",                "funkyrect",  "benchmark", lst(),
+  "Memory",             "Scalability",        "Memory (MB)",          "rect",       "scaling",   lst(width = 1.7),
+  "Memory",             "Scalability",        "Memory (MB)",          "text",       "black",     lst(overlay = TRUE),
+  "Runtime",            "Scalability",        "Runtime (sec)",        "rect",       "scaling",   lst(width = 1.7),
+  "Runtime",            "Scalability",        "Runtime (sec)",        "text",       "black",     lst(overlay = TRUE),
+  "Overall_Score",      "Final Ranking",      "Overall score",        "bar",        "stability", lst(width = 2.4),
+  "Rank",               "Final Ranking",      "Ranking",              "text",       "stability", lst(width = 1.8),
+
+
 )
 ```
 
@@ -922,8 +1086,8 @@ Define the subgroups/subsections to plot in the funkyheatmap
 ```{r}
 column_groups <- tibble(
   Experiment = c("Method", "General performance", "General performance", "General performance","Performance per sequencing depth", "Performance per sequencing depth", "Performance per sequencing depth", "Scalability","Final Ranking"),
-  Category = c("", "Per metric", "Per DMRtool", "Per dataset", "WGBS-TT" , "RRBS-TT", "RRBS-CL", "",""),
-  group = c("Method", "Summary", "Per DMRtool", "Per dataset", "Per SeqDepth (WGBS-TT)", "Per SeqDepth (RRBS-TT)", "Per SeqDepth (RRBS-CL)", "Scalability","Final Ranking"),
+  Category = c("", "Per metric", "Per DMRtool", "Per dataset", "WGBS" , "RRBS", "cfRRBS", "",""),
+  group = c("Method", "Summary", "Per DMRtool", "Per dataset", "Per SeqDepth (WGBS)", "Per SeqDepth (RRBS)", "Per SeqDepth (cfRRBS)", "Scalability","Final Ranking"),
   palette = c("overall","benchmark", "benchmark", "benchmark", "benchmark", "benchmark", "benchmark", "scaling","stability")
 )
 ```
@@ -935,9 +1099,8 @@ And finally plot it
 g <- funky_heatmap(data_funkyheat, 
                    column_info = column_info,
                    column_groups = column_groups,
-                   palettes = palettes,
-                   scale_column = F
-                   )
+                   palettes = palettes
+                   ) 
 g
 ```
 
@@ -947,7 +1110,7 @@ And save it in the correct location in svg format for a better visualization.
 output_dir <- "../plots/06_funkyheatmap"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
-output_file <- file.path(output_dir, paste0("funkyheatmap.v3.svg"))
+output_file <- file.path(output_dir, paste0("funkyheatmap.v2.svg"))
 ggsave(output_file, g, width = g$width, height = g$height)
 ```
 

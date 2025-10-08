@@ -282,7 +282,7 @@ draw(Reduce(`+`, heatmaps))
 ```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/01_comprehensive_heatmaps"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Combine and draw
 pdf(paste0(output_dir,"/wgbs_scc_auc_heatmap.pdf"), width = 12, height = 6)
@@ -416,7 +416,7 @@ draw(Reduce(`+`, heatmaps))
 ```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/01_comprehensive_heatmaps"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Combine and draw
 pdf(paste0(output_dir,"/wgbs_rmse_heatmap.pdf"), width = 12, height = 6)
@@ -549,7 +549,7 @@ draw(Reduce(`+`, heatmaps))
 ```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/01_comprehensive_heatmaps"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save
 pdf(paste0(output_dir,"/rrbs_scc_auc_heatmap.pdf"), width = 12, height = 6)
@@ -681,7 +681,7 @@ draw(Reduce(`+`, heatmaps))
 ```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/01_comprehensive_heatmaps"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save
 pdf(paste0(output_dir,"/rrbs_rmse_heatmap.pdf"), width = 12, height = 6)
@@ -812,7 +812,7 @@ draw(Reduce(`+`, heatmaps))
 ```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/01_comprehensive_heatmaps"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save
 pdf(paste0(output_dir,"/cfrrbs_scc_auc_heatmap.pdf"), width = 12, height = 6)
@@ -947,7 +947,7 @@ draw(Reduce(`+`, heatmaps))
 ```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/01_comprehensive_heatmaps"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Combine and draw
 pdf(paste0(output_dir, "/cfrrbs_rmse_heatmap.pdf"), width = 12, height = 6)

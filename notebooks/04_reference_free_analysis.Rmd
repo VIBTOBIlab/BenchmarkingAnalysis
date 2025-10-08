@@ -124,7 +124,7 @@ p
 ```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/04_refree_vs_refbased"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 ggsave(paste0(output_dir, "/rmse_wgbs.png"), p, width = 8, height = 6)
 ```
@@ -184,7 +184,7 @@ p
 ```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/04_refree_vs_refbased/boxplots"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 output_file <- file.path(output_dir, paste0("boxplot_predictions_wgbs_lf.png"))
 ggsave(output_file, plot = p, width = 8, height = 6)
@@ -246,7 +246,7 @@ As it is shown in the boxplots, reference-free methods tend to overestimate the 
 ```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/04_refree_vs_refbased/actual_predictions"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 output_file <- file.path(output_dir, paste0("boxplot_predictions_wgbs_hf.png"))
 ggsave(output_file, plot = p, width = 8, height = 6)
@@ -309,7 +309,7 @@ p
 ```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/04_refree_vs_refbased"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 ggsave(paste0(output_dir, "/rmse_rrbs.png"), p, width = 8, height = 6)
 ```
@@ -366,7 +366,7 @@ p
 ```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/04_refree_vs_refbased/boxplots"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 output_file <- file.path(output_dir, paste0("boxplot_predictions_rrbs_lf.png"))
 ggsave(output_file, plot = p, width = 8, height = 6)
@@ -426,7 +426,7 @@ p
 ```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/04_refree_vs_refbased/boxplots"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 output_file <- file.path(output_dir, paste0("boxplot_predictions_rrbs_hf.png"))
 ggsave(output_file, plot = p, width = 8, height = 6)

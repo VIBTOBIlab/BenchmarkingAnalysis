@@ -130,7 +130,7 @@ We can now plot the results in an separate heatmap for each dataset. We will sta
 lod_tools_aggr_wgbs <- all.stats %>%
   filter(tumor_type %in% c("BRCA","BLCA","LUAD","LUSC")) %>%
   group_by(deconv_tool, seq_depth) %>%
-  summarise(LoD = mean(lod))
+  summarise(LoD = median(lod))
 ```
 
 
@@ -187,7 +187,7 @@ p
 ```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/02_lod_heatmaps"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save to PDF
 pdf(paste0(output_dir,"/heatmap_lod_wgbs.pdf"), width = 6, height = 5)
@@ -204,15 +204,15 @@ We will now plot the results for RRBS following the same approach as for WGBS.
 lod_tools_aggr_rrbs <- all.stats %>%
   filter(tumor_type %in% c("CRC", "PC", "LC")) %>%
   group_by(deconv_tool, seq_depth) %>%
-  summarise(LoD = mean(lod))
+  summarise(LoD = median(lod))
 ```
 
 
 ```{r}
 # Define the exact order you want
 col_order <- c("2M", "5M", "10M", "15M", "20M")
-row_order_rrbs <- c("CelFiE", "EpiDISH_CP_ineq", "EpiDISH_CP_eq", 
-                    "meth_atlas", "PRMeth", "MetDecode","EpiDISH_RPC", "EpiSCORE","CIBERSORT", "UXM")
+row_order_rrbs <- c("CelFiE", "UXM", "EpiDISH_CP_ineq", "EpiDISH_CP_eq", "MetDecode",
+                    "meth_atlas", "PRMeth", "EpiSCORE", "EpiDISH_RPC", "CIBERSORT")
 
 # Build the matrix
 mat_rrbs <- lod_tools_aggr_rrbs %>%
@@ -260,7 +260,7 @@ p
 ```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/02_lod_heatmaps"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save to PDF
 pdf(paste0(output_dir,"/heatmap_lod_rrbs.pdf"), width = 6, height = 5)
@@ -268,7 +268,7 @@ draw(p)
 dev.off()
 ```
 
-### Plot the results on cfRRBS
+### Plot the results on RRBS-CL
 
 We will now plot the results for cfRRBS following the same approach as for WGBS.
 
@@ -276,15 +276,15 @@ We will now plot the results for cfRRBS following the same approach as for WGBS.
 lod_tools_aggr_cfrrbs <- all.stats %>%
   filter(tumor_type %in% c("NBL")) %>%
   group_by(deconv_tool, seq_depth) %>%
-  summarise(LoD = mean(lod))
+  summarise(LoD = median(lod))
 ```
 
 
 ```{r}
 # Define the exact order you want
 col_order <- c("2M", "5M", "10M", "15M", "20M")
-row_order_cfrrbs <- c("CelFiE", "MetDecode", "EpiDISH_CP_ineq", "EpiDISH_CP_eq", 
-                    "meth_atlas", "PRMeth", "EpiDISH_RPC", "EpiSCORE","CIBERSORT", "UXM")
+row_order_cfrrbs <- c("CelFiE", "UXM", "EpiDISH_CP_ineq", "EpiDISH_CP_eq", "MetDecode",
+                    "meth_atlas", "PRMeth", "EpiSCORE", "EpiDISH_RPC", "CIBERSORT")
 
 # Build the matrix
 mat_cfrrbs <- lod_tools_aggr_cfrrbs %>%
@@ -332,7 +332,7 @@ p
 ```{r}
 # Create the main directory to save the plots
 output_dir <- "../plots/02_lod_heatmaps"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save to PDF
 pdf(paste0(output_dir,"/heatmap_lod_cfrrbs.pdf"), width = 6, height = 5)

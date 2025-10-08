@@ -135,7 +135,7 @@ p1
 ```{r}
 # Create a directory to save the plots (optional)
 output_dir <- "../plots/08_preciseness"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save the plot as an image
 output_file <- file.path(output_dir, paste0("preciseness_WGBS_dataset_scatterplot.svg"))
@@ -209,7 +209,7 @@ p1
 ```{r}
 # Create a directory to save the plots (optional)
 output_dir <- "../plots/08_preciseness"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save the plot as an image
 output_file <- file.path(output_dir, paste0("preciseness_WGBS_dataset_boxplots.svg"))
@@ -246,7 +246,7 @@ p1
 ```{r}
 # Create a directory to save the plots (optional)
 output_dir <- "../plots/08_preciseness"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save the plot as an image
 output_file <- file.path(output_dir, paste0("preciseness_WGBS_median_rmse.svg"))
@@ -323,7 +323,7 @@ p1
 ```{r}
 # Create a directory to save the plots (optional)
 output_dir <- "../plots/08_preciseness"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save the plot as an image
 output_file <- file.path(output_dir, paste0("preciseness_RRBS_dataset_scatterplot.svg"))
@@ -398,7 +398,7 @@ p1
 ```{r}
 # Create a directory to save the plots (optional)
 output_dir <- "../plots/08_preciseness"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save the plot as an image
 output_file <- file.path(output_dir, paste0("preciseness_RRBS_dataset_boxplots.svg"))
@@ -434,7 +434,7 @@ p1
 ```{r}
 # Create a directory to save the plots (optional)
 output_dir <- "../plots/08_preciseness"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save the plot as an image
 output_file <- file.path(output_dir, paste0("preciseness_RRBS_median_rmse.svg"))
@@ -511,7 +511,7 @@ p1
 ```{r}
 # Create a directory to save the plots (optional)
 output_dir <- "../plots/08_preciseness"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save the plot as an image
 output_file <- file.path(output_dir, paste0("preciseness_cfRRBS_dataset_scatterplot.svg"))
@@ -586,7 +586,7 @@ p1
 ```{r}
 # Create a directory to save the plots (optional)
 output_dir <- "../plots/08_preciseness"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save the plot as an image
 output_file <- file.path(output_dir, paste0("preciseness_cfRRBS_dataset_boxplots.svg"))
@@ -623,7 +623,7 @@ p1
 ```{r}
 # Create a directory to save the plots (optional)
 output_dir <- "../plots/08_preciseness"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save the plot as an image
 output_file <- file.path(output_dir, paste0("preciseness_cfRRBS_median_rmse.svg"))

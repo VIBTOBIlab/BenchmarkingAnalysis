@@ -126,7 +126,7 @@ combined.plot
 
 ```{r}
 output_dir <- "../plots/07_scalability"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 output_file <- file.path(output_dir, paste0("memory_time_boxplots_8CPU_16GB.svg"))
 ggsave(output_file, combined.plot, width = 8, height = 5)
@@ -136,6 +136,22 @@ ggsave(output_file, combined.plot, width = 8, height = 5)
 ### Compare the memory at different number of DMRs and samples
 
 We can also check how the memory changes increasing the number of DMRs and samples.
+
+```{r}
+tool_colors <- c(
+  "CELFIE"             ="#A6CEE3", 
+  "CIBERSORT"          ="#1F78B4",
+  "EPIDISH_eq"      ="#B2DF8A", 
+  "EPIDISH_ineq"    ="#33A02C",
+  "EPIDISH_RPC"        ="#FB9A99", 
+  "EPISCORE"           ="#E31A1C",
+  "METDECODE"          ="#FDBF6F", 
+  "METH_ATLAS"         ="#FF7F00",
+  "PRMETH"             ="#CAB2D6", 
+  "UXM"                ="#6A3D9A"
+)
+```
+
 
 ```{r}
 # Summarize by mean or median
@@ -153,6 +169,7 @@ p1 <- ggplot(summary_df_dmr, aes(x = dmr, y = mean_rss, color = name)) +
        x = "Number of DMRs", y = "Memory usage (MB)") +
   theme_classic() +
   theme(legend.position = "none") +
+  scale_color_manual(values = tool_colors) +
   scale_x_continuous(breaks = c(25, 100, 250, 500)) +
   ylim(0,800)
 
@@ -162,6 +179,7 @@ p2 <- ggplot(summary_df_samples, aes(x = samples, y = mean_rss, color = name)) +
   labs(title = "",
        x = "Number of samples", y = "") +
   theme_classic() +
+  scale_color_manual(values = tool_colors) +
   scale_x_continuous(breaks = c(5, 20, 50, 100)) +
   ylim(0,800)
 
@@ -173,7 +191,7 @@ combined.plot
 
 ```{r}
 output_dir <- "../plots/07_scalability"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 output_file <- file.path(output_dir, paste0("memory_samples_dmrs_8CPU_16GB.svg"))
 ggsave(output_file, combined.plot, width = 8, height = 4)
@@ -200,6 +218,7 @@ p1 <- ggplot(summary_df_dmr, aes(x = dmr, y = mean_time, color = name)) +
        x = "Number of DMRs", y = "Real time (seconds)") +
   theme_classic() +
   theme(legend.position = "none") +
+  scale_color_manual(values = tool_colors) +
   scale_x_continuous(breaks = c(25, 100, 250, 500)) +
   scale_y_continuous(breaks = seq(0,70,by=10)) + 
   ylim(0,30)
@@ -211,6 +230,7 @@ p2 <- ggplot(summary_df_samples, aes(x = samples, y = mean_time, color = name)) 
        x = "Number of samples", y = "") +
   theme_classic() +
   scale_x_continuous(breaks = c(5, 20, 50, 100)) + 
+  scale_color_manual(values = tool_colors) +
   scale_y_continuous(breaks = seq(0,70,by=10)) +
   ylim(0,30)
 
@@ -223,7 +243,7 @@ combined.plot
 
 ```{r}
 output_dir <- "../plots/07_scalability"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 output_file <- file.path(output_dir, paste0("time_samples_dmrs_8CPU_16GB.svg"))
 ggsave(output_file, combined.plot, width = 8, height = 4)

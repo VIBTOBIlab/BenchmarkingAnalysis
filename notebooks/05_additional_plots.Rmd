@@ -268,7 +268,7 @@ Here, we want to visualize how many times a tool is found in a given ranking pos
 ```{r}
 # Create a directory to save the plots (optional)
 output_dir <- "../plots/05_additional_plots/ranking_distributions"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
       
@@ -344,7 +344,7 @@ We can now plot the ranking distribution for the LoD as well. For more informati
 ```{r}
 # Create a directory to save the plots (optional)
 output_dir <- "../plots/05_additional_plots/ranking_distributions"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Import the results generated in 02_ notebook
 all.stats <- read.csv("../resources/lod_allstats.csv")
@@ -417,7 +417,7 @@ We can now rank the tools based on the AUC-ROC score. We will use the raw score 
 ```{r}
 # Create a directory to save the plots (optional)
 output_dir <- "../plots/05_additional_plots/dotplots_rank_AUC"
-if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
       
