@@ -187,7 +187,7 @@ You can reproduce the sequencing saturation analysis using the provided Python s
 
 ```bash
 # If not, install matplotlib
-pip install matplotlib==3.9.2
+pip install numpy pandas matplotlib scipy
 # Run the script
 python3 resources/plot_seqstat.py \
     --cpgs_file resources/cov_cpgcounts.csv \
