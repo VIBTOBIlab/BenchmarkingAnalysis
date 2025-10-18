@@ -51,9 +51,9 @@ scc <- function(actual, predicted) {
 tool_colors <- c(
   "CelFiE"             ="#A6CEE3", 
   "CIBERSORT"          ="#1F78B4",
-  "EpiDISH_CP_eq"      ="#B2DF8A", 
-  "EpiDISH_CP_ineq"    ="#33A02C",
-  "EpiDISH_RPC"        ="#FB9A99", 
+  "Houseman_eq"        ="#B2DF8A", 
+  "Houseman_ineq"      ="#33A02C",
+  "EpiDISH"            ="#FB9A99", 
   "EpiSCORE"           ="#E31A1C",
   "MetDecode"          ="#FDBF6F", 
   "meth_atlas"         ="#FF7F00",
@@ -97,53 +97,9 @@ df.wgbs.metrics <- scc_raw_wgbs %>%
 ```
 
 
-### Plot the data of WGBS
+### Plot the data of WGBS-TT
 
-#### DotPlot of RMSE+SCC combined
-
-```{r}
-# Order seq_depth manually
-df.wgbs <- df.wgbs.metrics %>%
-  group_by(deconv_tool, fraction_class) %>%
-  summarize(RMSE = mean(`1-RMSE`),
-            SCC = mean(SCC))
-df.wgbs$fraction_class <- factor(df.wgbs$fraction_class,
-                            levels = c("low", "medium", "high"))
-```
-
-
-```{r}
-p1 <- ggplot(df.wgbs, aes(x = SCC, y = RMSE, fill = deconv_tool)) +
-  geom_point(shape = 21, size = 3, stroke = 0.8, color = "black") +
-  facet_grid(~ fraction_class, axes = "all") +
-  scale_fill_brewer(palette = "Paired") +
-  theme_classic() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    legend.position = "right"
-  ) +
-  labs(
-    title = "WGBS dataset",
-    fill = "Deconvolution Tool",
-    y = "1-RMSE"
-  ) +
-  scale_fill_manual(values = tool_colors)
-p1
-```
-
-
-```{r}
-# Create a directory to save the plots (optional)
-output_dir <- "../plots/08_preciseness"
-if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
-
-# Save the plot as an image
-output_file <- file.path(output_dir, paste0("preciseness_WGBS_dataset_scatterplot.svg"))
-ggsave(output_file, plot = p1, width = 8, height = 4)
-```
-
-
-#### Boxplots of RMSE + SCC points
+#### Boxplots of RMSE
 
 ```{r}
 # Compute the SCC
@@ -179,29 +135,25 @@ fin.scc$deconv_tool       <- factor(fin.scc$deconv_tool, levels = tool_order)
 
 ```{r}
 # Plot
-p1 <- ggplot(data = rmse_raw_wgbs, aes(x = deconv_tool, y = `1-RMSE`, fill = deconv_tool)) +
-  geom_boxplot(outliers = FALSE) +
-  geom_point(data = fin.scc,
-             aes(x = deconv_tool, y = SCC, color = "SCC"), size = 2, show.legend = T) +
-  scale_color_manual(name = "", values = c("SCC" = "red")) +
-  scale_y_continuous(
-    # Features of the first axis
-    name = "1-RMSE",
-    # Add a second axis and specify its features
-    sec.axis = sec_axis( trans=~.*1, name="SCC")
+p1 <- ggplot(data = rmse_raw_wgbs, aes(
+    x = reorder_within(deconv_tool,-`1-RMSE`, fraction_class, median), 
+    y = `1-RMSE`, fill = deconv_tool)
   ) +
-  facet_wrap(~ fraction_class, axes = "all") +
+  geom_jitter(size=1, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  scale_color_manual(name = "", values = c("SCC" = "red")) +
+  facet_wrap(~ fraction_class, axes = "all", scales = "free_x") +
   theme_classic() +
   theme(
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
     legend.position = "bottom"
   ) +
-  labs(title = "WGBS dataset",
+  labs(title = "WGBS-TT dataset",
        x = "", y = "1 - RMSE",
        color = "SCC") +
+  scale_x_reordered() +
   scale_fill_manual(values = tool_colors) +
-  guides(fill = guide_legend(override.aes = list(shape = NA)))
+  scale_color_manual(values = tool_colors)
 p1
 ```
 
@@ -216,30 +168,36 @@ output_file <- file.path(output_dir, paste0("preciseness_WGBS_dataset_boxplots.s
 ggsave(output_file, plot = p1, width = 8, height = 4)
 ```
 
-
-#### Plot dotplots of RMSE
+#### Boxplots of SCC
 
 ```{r}
-rmse_rank <- rmse_raw_wgbs %>% 
-  group_by(deconv_tool, fraction_class) %>%
-  summarise(`1-RMSE` = median(`1-RMSE`)) %>%
-  arrange(fraction_class, desc(`1-RMSE`))
+# Compute the SCC
+median_scc <- scc_raw_wgbs %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
 
-p1 <- ggplot(rmse_rank, aes(
-  x = reorder_within(deconv_tool, -`1-RMSE`, fraction_class),
-  y = `1-RMSE`,
-  color = deconv_tool
-)) +
-  geom_point(size = 3) +
-  facet_wrap(~fraction_class, ncol = 3, scales = "free_x") +
-  scale_x_reordered() +
+scc_raw_wgbs$deconv_tool <- factor(scc_raw_wgbs$deconv_tool, levels = median_scc)
+```
+
+
+```{r}
+# Plot
+p1 <- ggplot(data = scc_raw_wgbs, aes(
+    x = deconv_tool, y = SCC, fill = deconv_tool)
+  ) +
+  geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
   theme_classic() +
   theme(
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    legend.position = "bottom") +
-  scale_color_manual(values = tool_colors) +
-  labs(x = "Deconvolution Tool", y = "1 - RMSE")
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  ) +
+  labs(title = "WGBS-TT dataset",
+       x = "", y = "SCC") +
+  scale_fill_manual(values = tool_colors) +
+  scale_color_manual(values = tool_colors)
 p1
 ```
 
@@ -249,11 +207,11 @@ output_dir <- "../plots/08_preciseness"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save the plot as an image
-output_file <- file.path(output_dir, paste0("preciseness_WGBS_median_rmse.svg"))
+output_file <- file.path(output_dir, paste0("preciseness_SCC_WGBS_dataset_boxplots.svg"))
 ggsave(output_file, plot = p1, width = 8, height = 4)
 ```
 
-## Analyse RRBS dataset
+## Analyse RRBS-TT dataset
 
 And now we analyze the RRBS in silico mixtures 
 
@@ -289,49 +247,7 @@ df.rrbs.metrics <- scc_raw_rrbs %>%
 
 ### Plot the data of RRBS
 
-#### DotPlot of RMSE+SCC combined
-
-```{r}
-# Order seq_depth manually
-df.rrbs <- df.rrbs.metrics %>%
-  group_by(deconv_tool, fraction_class) %>%
-  summarize(RMSE = mean(`1-RMSE`),
-            SCC = mean(SCC))
-df.rrbs$fraction_class <- factor(df.rrbs$fraction_class,
-                            levels = c("low", "medium", "high"))
-```
-
-
-```{r}
-p1 <- ggplot(df.rrbs, aes(x = SCC, y = RMSE, fill = deconv_tool)) +
-  geom_point(shape = 21, size = 3, stroke = 0.8, color = "black") +
-  facet_grid(~ fraction_class, axes = "all") +
-  theme_classic() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    legend.position = "right"
-  ) +
-  labs(
-    title = "RRBS dataset",
-    fill = "Deconvolution Tool"
-  ) +
-  scale_fill_manual(values = tool_colors)
-p1
-```
-
-
-```{r}
-# Create a directory to save the plots (optional)
-output_dir <- "../plots/08_preciseness"
-if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
-
-# Save the plot as an image
-output_file <- file.path(output_dir, paste0("preciseness_RRBS_dataset_scatterplot.svg"))
-ggsave(output_file, plot = p1, width = 8, height = 6)
-```
-
-
-#### Boxplots of RMSE + SCC points
+#### Boxplots of RMSE
 
 ```{r}
 # Compute the SCC
@@ -367,30 +283,25 @@ fin.scc$deconv_tool       <- factor(fin.scc$deconv_tool, levels = tool_order)
 
 ```{r}
 # Plot
-p1 <- ggplot(data = rmse_raw_rrbs, aes(x = deconv_tool, y = `1-RMSE`, fill = deconv_tool)) +
-  geom_boxplot(outliers = FALSE) +
-  geom_point(data = fin.scc,
-             aes(x = deconv_tool, y = SCC, color = "SCC"), size = 2, show.legend = T) +
-  scale_x_reordered() +
-  scale_color_manual(name = "", values = c("SCC" = "red")) +
-  scale_y_continuous(
-    # Features of the first axis
-    name = "1-RMSE",
-    # Add a second axis and specify its features
-    sec.axis = sec_axis( trans=~.*1, name="SCC")
+p1 <- ggplot(data = rmse_raw_rrbs, aes(
+    x = reorder_within(deconv_tool,-`1-RMSE`, fraction_class, median), 
+    y = `1-RMSE`, fill = deconv_tool)
   ) +
-  facet_wrap(~ fraction_class, axes = "all") +
+  geom_jitter(size=1, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~ fraction_class, axes = "all", scales = "free_x") +
   theme_classic() +
   theme(
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
     legend.position = "bottom"
   ) +
-  labs(title = "RRBS dataset",
+  labs(title = "RRBS-TT",
        x = "", y = "1 - RMSE",
        color = "SCC") +
+  scale_x_reordered() +
   scale_fill_manual(values = tool_colors) +
-  guides(fill = guide_legend(override.aes = list(shape = NA)))
+  scale_color_manual(values = tool_colors) +
+  scale_color_manual(values = tool_colors)
 p1
 ```
 
@@ -405,29 +316,36 @@ output_file <- file.path(output_dir, paste0("preciseness_RRBS_dataset_boxplots.s
 ggsave(output_file, plot = p1, width = 8, height = 4)
 ```
 
-#### Plot dotplots of RMSE
+#### Boxplots of SCC
 
 ```{r}
-rmse_rank <- rmse_raw_rrbs %>% 
-  group_by(deconv_tool, fraction_class) %>%
-  summarise(`1-RMSE` = median(`1-RMSE`)) %>%
-  arrange(fraction_class, desc(`1-RMSE`))
+# Compute the SCC
+median_scc <- scc_raw_rrbs %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
 
-p1 <- ggplot(rmse_rank, aes(
-  x = reorder_within(deconv_tool, -`1-RMSE`, fraction_class),
-  y = `1-RMSE`,
-  color = deconv_tool
-)) +
-  geom_point(size = 3) +
-  facet_wrap(~fraction_class, ncol = 3, scales = "free_x") +
-  scale_x_reordered() +
+scc_raw_rrbs$deconv_tool <- factor(scc_raw_rrbs$deconv_tool, levels = median_scc)
+```
+
+
+```{r}
+# Plot
+p1 <- ggplot(data = scc_raw_rrbs, aes(
+    x = deconv_tool, y = SCC, fill = deconv_tool)
+  ) +
+  geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
   theme_classic() +
   theme(
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    legend.position = "bottom") +
-  scale_color_manual(values = tool_colors) +
-  labs(x = "Deconvolution Tool", y = "1 - RMSE")
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  ) +
+  labs(title = "RRBS-TT",
+       x = "", y = "SCC") +
+  scale_fill_manual(values = tool_colors) +
+  scale_color_manual(values = tool_colors)
 p1
 ```
 
@@ -437,11 +355,12 @@ output_dir <- "../plots/08_preciseness"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save the plot as an image
-output_file <- file.path(output_dir, paste0("preciseness_RRBS_median_rmse.svg"))
+output_file <- file.path(output_dir, paste0("preciseness_SCC_RRBS_dataset_boxplots.svg"))
 ggsave(output_file, plot = p1, width = 8, height = 4)
 ```
 
-## Analyse cfRRBS dataset
+
+## Analyse RRBS-CL dataset
 
 And now we analyze the cfRRBS in silico mixtures 
 
@@ -477,49 +396,7 @@ df.cfrrbs.metrics <- scc_raw_cfrrbs %>%
 
 ### Plot the data of RRBS
 
-#### DotPlot of RMSE+SCC combined
-
-```{r}
-# Order seq_depth manually
-df.cfrrbs <- df.cfrrbs.metrics %>%
-  group_by(deconv_tool, fraction_class) %>%
-  summarize(RMSE = mean(`1-RMSE`),
-            SCC = mean(SCC))
-df.cfrrbs$fraction_class <- factor(df.cfrrbs$fraction_class,
-                            levels = c("low", "medium", "high"))
-```
-
-
-```{r}
-p1 <- ggplot(df.cfrrbs, aes(x = SCC, y = RMSE, fill = deconv_tool)) +
-  geom_point(shape = 21, size = 3, stroke = 0.8, color = "black") +
-  facet_grid(~ fraction_class, axes = "all") +
-  theme_classic() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    legend.position = "right"
-  ) +
-  labs(
-    title = "RRBS dataset (cell lines)",
-    fill = "Deconvolution Tool"
-  ) +
-  scale_fill_manual(values = tool_colors)
-p1
-```
-
-
-```{r}
-# Create a directory to save the plots (optional)
-output_dir <- "../plots/08_preciseness"
-if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
-
-# Save the plot as an image
-output_file <- file.path(output_dir, paste0("preciseness_cfRRBS_dataset_scatterplot.svg"))
-ggsave(output_file, plot = p1, width = 8, height = 4)
-```
-
-
-#### Boxplots of RMSE + SCC points
+#### Boxplots of RMSE
 
 ```{r}
 # Compute the SCC
@@ -555,30 +432,24 @@ fin.scc$deconv_tool       <- factor(fin.scc$deconv_tool, levels = tool_order)
 
 ```{r}
 # Plot
-p1 <- ggplot(data = rmse_raw_cfrrbs, aes(x = deconv_tool, y = `1-RMSE`, fill = deconv_tool)) +
-  geom_boxplot(outliers = FALSE) +
-  geom_point(data = fin.scc,
-             aes(x = deconv_tool, y = SCC, color = "SCC"), size = 2, show.legend = T) +
-  scale_x_reordered() +
-  scale_color_manual(name = "", values = c("SCC" = "red")) +
-  scale_y_continuous(
-    # Features of the first axis
-    name = "1-RMSE",
-    # Add a second axis and specify its features
-    sec.axis = sec_axis( trans=~.*1, name="SCC")
+p1 <- ggplot(data = rmse_raw_cfrrbs, aes(
+    x = reorder_within(deconv_tool,-`1-RMSE`, fraction_class, median), 
+    y = `1-RMSE`, fill = deconv_tool)
   ) +
-  facet_wrap(~ fraction_class, axes = "all") +
+  geom_jitter(size=1, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~fraction_class, scales = "free_x") +
   theme_classic() +
   theme(
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
     legend.position = "bottom"
   ) +
-  labs(title = "RRBS dataset (cell lines)",
+  labs(title = "RRBS-CL dataset",
        x = "", y = "1 - RMSE",
        color = "SCC") +
+  scale_x_reordered() +
   scale_fill_manual(values = tool_colors) +
-  guides(fill = guide_legend(override.aes = list(shape = NA)))
+  scale_color_manual(values = tool_colors)
 p1
 ```
 
@@ -594,29 +465,36 @@ ggsave(output_file, plot = p1, width = 8, height = 4)
 ```
 
 
-#### Plot dotplots of RMSE
+#### Boxplots of SCC
 
 ```{r}
-rmse_rank <- rmse_raw_cfrrbs %>% 
-  group_by(deconv_tool, fraction_class) %>%
-  summarise(`1-RMSE` = median(`1-RMSE`)) %>%
-  arrange(fraction_class, desc(`1-RMSE`))
+# Compute the SCC
+median_scc <- scc_raw_cfrrbs %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
 
-p1 <- ggplot(rmse_rank, aes(
-  x = reorder_within(deconv_tool, -`1-RMSE`, fraction_class),
-  y = `1-RMSE`,
-  color = deconv_tool
-)) +
-  geom_point(size = 3) +
-  facet_wrap(~fraction_class, ncol = 3, scales = "free_x") +
-  scale_x_reordered() +
+scc_raw_cfrrbs$deconv_tool <- factor(scc_raw_cfrrbs$deconv_tool, levels = median_scc)
+```
+
+
+```{r}
+# Plot
+p1 <- ggplot(data = scc_raw_cfrrbs, aes(
+    x = deconv_tool, y = SCC, fill = deconv_tool)
+  ) +
+  geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
   theme_classic() +
   theme(
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    legend.position = "bottom") +
-  scale_color_manual(values = tool_colors) +
-  labs(x = "Deconvolution Tool", y = "1 - RMSE")
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  ) +
+  labs(title = "RRBS-CL dataset",
+       x = "", y = "SCC") +
+  scale_fill_manual(values = tool_colors) +
+  scale_color_manual(values = tool_colors)
 p1
 ```
 
@@ -626,6 +504,128 @@ output_dir <- "../plots/08_preciseness"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save the plot as an image
-output_file <- file.path(output_dir, paste0("preciseness_cfRRBS_median_rmse.svg"))
+output_file <- file.path(output_dir, paste0("preciseness_SCC_cfRRBS_dataset_boxplots.svg"))
 ggsave(output_file, plot = p1, width = 8, height = 4)
 ```
+
+## Analyse all datasets combined
+
+We finally analyse all the datasets combined. We can now compute the RMSE and SCC. Differently from other notebooks, here we will use the raw RMSE and SCC without min-max scaling it across deconvolution tools. This is necessary since we want to check, within each deconvolution tool, whether the performance changes varying the sequencing depth and expected fractions.
+
+```{r}
+rmse_raw_aggr <- bench.res %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type, fraction_class) %>%
+  summarize("1-RMSE" = 1-rmse(expected_tf, predicted_tf))
+```
+
+Finally, we compute the SCC. The SCC is computed for each combination pooling all the observed tumor fractions together to get a value for each combination. 
+
+```{r}
+# Compute the metrics: modify the RMSE= 1) nrmse 2) rmse 3) rmse of logit(values)
+scc_raw_aggr <- bench.res %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(SCC = cor(expected_tf, predicted_tf, method = "spearman"), .groups = "drop")
+```
+
+
+We can now combine the RMSE and SCC metrics into a unique dataframe
+
+```{r}
+df.aggr.metrics <- scc_raw_aggr %>%
+  left_join(rmse_raw_aggr)
+```
+
+
+### Plot all datasets aggregated
+
+#### Boxplots of RMSE
+
+```{r}
+# Set fraction_class as an ordered factor
+rmse_raw_aggr$fraction_class <- factor(
+  rmse_raw_aggr$fraction_class,
+  levels = c("low", "medium", "high")
+)
+```
+
+
+```{r}
+# Plot
+p1 <- ggplot(data = rmse_raw_aggr, aes(
+    x = reorder_within(deconv_tool,-`1-RMSE`, fraction_class, median), 
+    y = `1-RMSE`, fill = deconv_tool)
+  ) +
+  geom_jitter(size=1, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~ fraction_class, axes = "all", scales = "free_x") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  ) +
+  labs(title = "All datasets",
+       x = "", y = "1 - RMSE") +
+  scale_x_reordered() +
+  scale_fill_manual(values = tool_colors) +
+  scale_color_manual(values = tool_colors) +
+  ylim(0.5,1)
+p1
+```
+
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- "../plots/08_preciseness"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Save the plot as an image
+output_file <- file.path(output_dir, paste0("preciseness_all_dataset_boxplots.svg"))
+ggsave(output_file, plot = p1, width = 8, height = 4)
+```
+
+#### Boxplots of SCC
+
+```{r}
+# Compute the SCC
+median_scc <- scc_raw_aggr %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
+
+scc_raw_aggr$deconv_tool <- factor(scc_raw_aggr$deconv_tool, levels = median_scc)
+```
+
+
+```{r}
+# Plot
+p1 <- ggplot(data = scc_raw_aggr, aes(
+    x = deconv_tool, y = SCC, fill = deconv_tool)
+  ) +
+  geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none",
+    plot.title = element_text(
+      face = "bold",
+      background = element_rect(fill = "grey90", color = NA, inherit.blank = FALSE))
+  ) +
+  labs(title = "All datasets",
+       x = "", y = "SCC") +
+  scale_fill_manual(values = tool_colors) +
+  scale_color_manual(values = tool_colors)
+p1
+```
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- "../plots/08_preciseness"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Save the plot as an image
+output_file <- file.path(output_dir, paste0("preciseness_SCC_all_dataset_boxplots.svg"))
+ggsave(output_file, plot = p1, width = 4, height = 4)
+```
+

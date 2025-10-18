@@ -42,10 +42,6 @@ source("../R/compute_auc.R")
 rmse <- function(actual, predicted) {
   round(sqrt(mean((actual - predicted)^2)),4)
 }
-# Normalized RMSE (NRMSE)
-nrmse <- function(actual, predicted) {
-    round(sqrt(mean((actual - predicted))^2)/mean(actual+10e-8),4)
-}
 # Spearman's rank correlation coefficient (SCC)
 scc <- function(actual, predicted) {
   cor(actual, predicted, method = "spearman", use = "pairwise.complete.obs")
@@ -56,7 +52,7 @@ Now, we will import all the results generated and described above. Note that her
 
 ```{r}
 df_raw <- read.csv("../resources/final_benchmarking_dataset.csv")
-bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico")
+bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico" & !(df_raw$deconv_tool %in% c("MeDeCom","RefFreeCellMix")))
 ```
 
 ### Missing values

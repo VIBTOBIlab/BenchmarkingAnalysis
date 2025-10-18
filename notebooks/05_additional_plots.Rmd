@@ -41,10 +41,6 @@ source("../R/compute_auc.R")
 rmse <- function(actual, predicted) {
   round(sqrt(mean((actual - predicted)^2)),4)
 }
-# Normalized RMSE (NRMSE)
-nrmse <- function(actual, predicted) {
-    round(sqrt(mean((actual - predicted))^2)/mean(actual+10e-8),4)
-}
 # Spearman's rank correlation coefficient (SCC)
 scc <- function(actual, predicted) {
   cor(actual, predicted, method = "spearman", use = "pairwise.complete.obs")
@@ -55,7 +51,8 @@ Now, we will import all the results generated and described above. Note that her
 
 ```{r}
 df_raw <- read.csv("../resources/final_benchmarking_dataset.csv")
-bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico")
+bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico") %>%
+  filter(!(deconv_tool %in% c("MeDeCom","RefFreeCellMix")))
 ```
 
 ### Missing values
@@ -198,13 +195,13 @@ output_dir <- "../plots/05_additional_plots/rankings_per_dataset/"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
 # Plot the ranking per dataset
-for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
+for (dataset in c("WGBS-TT", "RRBS-TT", "RRBS-CL")) {
       
       # Define the tumor types per dataset
-      if (dataset == "WGBS") { 
+      if (dataset == "WGBS-TT") { 
         tum_types <- c("BRCA","LUAD","LUSC","BLCA") }
   
-      else if (dataset == "RRBS") { 
+      else if (dataset == "RRBS-TT") { 
         tum_types <- c("CRC","PC","LC") }
   
       else { tum_types <- c("NBL") }
@@ -270,15 +267,16 @@ Here, we want to visualize how many times a tool is found in a given ranking pos
 output_dir <- "../plots/05_additional_plots/ranking_distributions"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
-for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
+# Plot the ranking per dataset
+for (dataset in c("WGBS-TT", "RRBS-TT", "RRBS-CL")) {
       
   # Define the tumor types per dataset
-  if (dataset == "WGBS") { 
+  if (dataset == "WGBS-TT") { 
     tum_types <- c("BRCA","LUAD","LUSC","BLCA") }
   
-  else if (dataset == "RRBS") { 
+  else if (dataset == "RRBS-TT") { 
     tum_types <- c("CRC","PC","LC") }
-
+  
   else { tum_types <- c("NBL") }
 
   for (metric in c("normAUC", "normRMSE", "normSCC", "normScore")) {
@@ -337,6 +335,69 @@ for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
 }
 ```
 
+
+Plot min-max scaled metrics for the datasets combined
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- "../plots/05_additional_plots/rankings_distributions/"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+      
+for (metric in c("Score", "AUC", "SCC", "RMSE")) {
+  
+    # Rank the data
+    data_ranked <- norm_merged_metrics %>%
+      group_by(dmr_tool, tumor_type, seq_depth) %>%
+      mutate(Rank = rank(-!!sym(metric), ties.method = "min")) %>%
+      ungroup()
+
+    # Compute rank counts
+    rank_counts <- data_ranked %>%
+      group_by(deconv_tool, Rank) %>%
+      summarise(Count = n(), .groups = 'drop')
+    
+    # Compute Weighted Score: Sum of (Count * Weight) to order the tools
+    weighted_scores <- rank_counts %>%
+      mutate(Weight = 1 / Rank,
+             Weighted = Count * Weight) %>%
+      group_by(deconv_tool) %>%
+      summarise(Weighted_Score = sum(Weighted),
+                .groups = 'drop')
+    
+    # Order tools based on Weighted Score (higher is better)
+    order_tools <- weighted_scores %>%
+      arrange(Weighted_Score) %>%
+      pull(deconv_tool)
+    
+    # Set factor levels for plotting
+    rank_counts$deconv_tool <- factor(rank_counts$deconv_tool, levels = order_tools)
+  
+    # Plotting
+    p <- ggplot(rank_counts, aes(x = Rank, y = deconv_tool, size = Count)) +
+      geom_point(color = "#3670A0", alpha = 0.8) +
+      scale_size_continuous(range = c(3,10)) +
+      labs(title = paste("Rank distribution of", metric, " in  all datasets"),
+           x = "Rank (lower = better)",
+           y = "Deconvolution Tool",
+           size = "Count") +
+      theme_classic(base_size = 14) +  # Clean white theme
+      theme(
+        panel.background = element_rect(fill = "white", color = NA),
+        plot.background = element_rect(fill = "white", color = NA),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+      ) +
+      scale_x_continuous(breaks = seq(1, max(rank_counts$Rank))) +
+      ylab("")
+    print(p)
+    
+    # Save the plot as an image
+    output_file <- file.path(output_dir, paste0("ranking_distribution_",metric,"_all_datasets.svg"))
+    ggsave(output_file, plot = p, width = 8, height = 6)
+
+}
+```
+
 ### Plot ranking distribution of the LoD
 
 We can now plot the ranking distribution for the LoD as well. For more information on how we computed the LoDs of the tools, you can go over the (second notebook)[02_limit_of_detection.Rmd].
@@ -349,13 +410,14 @@ if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 # Import the results generated in 02_ notebook
 all.stats <- read.csv("../resources/lod_allstats.csv")
 
-for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
+# Plot the ranking per dataset
+for (dataset in c("WGBS-TT", "RRBS-TT", "RRBS-CL")) {
       
   # Define the tumor types per dataset
-  if (dataset == "WGBS") { 
+  if (dataset == "WGBS-TT") { 
     tum_types <- c("BRCA","LUAD","LUSC","BLCA") }
   
-  else if (dataset == "RRBS") { 
+  else if (dataset == "RRBS-TT") { 
     tum_types <- c("CRC","PC","LC") }
 
   else { tum_types <- c("NBL") }
@@ -419,13 +481,14 @@ We can now rank the tools based on the AUC-ROC score. We will use the raw score 
 output_dir <- "../plots/05_additional_plots/dotplots_rank_AUC"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
-for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
+# Plot the ranking per dataset
+for (dataset in c("WGBS-TT", "RRBS-TT", "RRBS-CL")) {
       
   # Define the tumor types per dataset
-  if (dataset == "WGBS") { 
+  if (dataset == "WGBS-TT") { 
     tum_types <- c("BRCA","LUAD","LUSC","BLCA") }
   
-  else if (dataset == "RRBS") { 
+  else if (dataset == "RRBS-TT") { 
     tum_types <- c("CRC","PC","LC") }
 
   else { tum_types <- c("NBL") }
@@ -436,7 +499,7 @@ for (dataset in c("WGBS", "RRBS", "cfRRBS")) {
           summarise(AUC = median(AUC))
   
   # Order the seq depths and assign the correct color palette
-  if (dataset == "WGBS") {
+  if (dataset == "WGBS-T") {
     df$seq_depth <- factor(df$seq_depth, levels = c("62M", "183M", "310M", "620M"))
     option = "rocket" }
   else { 

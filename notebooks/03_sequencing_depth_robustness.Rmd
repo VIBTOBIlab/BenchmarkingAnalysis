@@ -33,7 +33,7 @@ Now, we will import all the results generated on the in silico mixtures. Note th
 ```{r}
 df_raw <- read.csv("../resources/final_benchmarking_dataset.csv")
 bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico") %>%
-  filter(!is.na(predicted_tf))
+  filter(!is.na(predicted_tf) & !(deconv_tool %in% c("MeDeCom","RefFreeCellMix")))
 ```
 
 Import the useful functions and the metrics
@@ -44,10 +44,6 @@ source("../R/compute_auc.R")
 # RMSE
 rmse <- function(actual, predicted) {
   round(sqrt(mean((actual - predicted)^2)),4)
-}
-# Normalized RMSE (NRMSE)
-nrmse <- function(actual, predicted) {
-    round(sqrt(mean((actual - predicted))^2)/mean(actual+10e-8),4)
 }
 # Spearman's rank correlation coefficient (SCC)
 scc <- function(actual, predicted) {
@@ -152,7 +148,7 @@ for (tum in unique(auc_wgbs$tumor_type)) {
       label.y = c(1, 1.05, 1.10, 1.15), size = 3
     ) +
     labs(
-      title = paste0("WGBS (",tum,") dataset"),
+      title = paste0("WGBS-TT (",tum,") dataset"),
       x = "Sequencing Depth",
       y = "AUC"
     ) +
@@ -161,8 +157,11 @@ for (tum in unique(auc_wgbs$tumor_type)) {
           axis.ticks.x = element_blank(),
           panel.grid.major.y = element_line(color = "grey90"),
           panel.grid.minor.y = element_line(color = "grey90")) +
-    scale_fill_manual(values = c("62M"="#FAEBDDFF","183M"="#F69C73FF","310M"="#A11A5BFF","620M"="#03051AFF")) +
-    ylim(0.5,1.20)
+    scale_fill_manual(values = c("62M"="#FAEBDDFF","183M"="#F69C73FF","310M"="#A11A5BFF","620M"="#03051AFF"))  +
+    scale_y_continuous(
+    breaks = c(0.6, 0.8, 1) # only show these breaks
+    ) +
+    coord_cartesian(ylim = c(0.5, 1.25))
   print(p1)
   
   # Save the plot as an image
@@ -196,7 +195,7 @@ p1 <- ggplot(auc_wgbs, aes(x = seq_depth, y = AUC, fill = seq_depth)) +
       label.y = c(1, 1.05, 1.10, 1.15), size = 3
     ) +
     labs(
-      title = "Entire WGBS dataset",
+      title = "Entire WGBS-TT dataset",
       x = "Sequencing Depth",
       y = "AUC"
     ) +
@@ -206,7 +205,10 @@ p1 <- ggplot(auc_wgbs, aes(x = seq_depth, y = AUC, fill = seq_depth)) +
           panel.grid.major.y = element_line(color = "grey90"),
           panel.grid.minor.y = element_line(color = "grey90")) +
     scale_fill_manual(values = c("62M"="#FAEBDDFF","183M"="#F69C73FF","310M"="#A11A5BFF","620M"="#03051AFF")) +
-    ylim(0.5,1.20)
+    scale_y_continuous(
+    breaks = c(0.6, 0.8, 1) # only show these breaks
+    ) +
+    coord_cartesian(ylim = c(0.5, 1.25))
 p1
 ```
 
@@ -321,8 +323,11 @@ for (tum in unique(auc_rrbs$tumor_type)) {
           axis.ticks.x = element_blank(),
           panel.grid.major.y = element_line(color = "grey90"),
           panel.grid.minor.y = element_line(color = "grey90")) +
-    scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF")) +
-    ylim(0.5,1.25)
+    scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF"))  +
+    scale_y_continuous(
+    breaks = c(0.6, 0.8, 1) # only show these breaks
+    ) +
+    coord_cartesian(ylim = c(0.5, 1.25))
   print(p1)
   
   # Save the plot as an image
@@ -366,8 +371,11 @@ p1 <- ggplot(auc_rrbs, aes(x = seq_depth, y = AUC, fill = seq_depth)) +
           axis.ticks.x = element_blank(),
           panel.grid.major.y = element_line(color = "grey90"),
           panel.grid.minor.y = element_line(color = "grey90")) +
-    scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF")) +
-    ylim(0.5,1.25)
+    scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF"))  +
+    scale_y_continuous(
+    breaks = c(0.6, 0.8, 1) # only show these breaks
+    ) +
+    coord_cartesian(ylim = c(0.5, 1.25))
 p1
 ```
 
@@ -484,63 +492,16 @@ for (tum in unique(auc_cfrrbs$tumor_type)) {
           panel.grid.major.y = element_line(color = "grey90"),
           panel.grid.minor.y = element_line(color = "grey90")) +
     scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF")) +
-    ylim(0.5,1.25)
+    scale_y_continuous(
+    breaks = c(0.6, 0.8, 1) # only show these breaks
+    ) +
+    coord_cartesian(ylim = c(0.5, 1.25))
   print(p1)
   
   # Save the plot as an image
   output_file <- file.path(output_dir, paste0("robustness_AUC_cfRRBS_",tum,".svg"))
   ggsave(output_file, plot = p1, width = 8, height = 6)
 }
-```
-
-And here we will generate the same plot as above, just aggregating all the tumors together to have a general overview.
-
-```{r warning=FALSE}
-# Order the seq depths levels
-auc_cfrrbs$seq_depth <- factor(auc_cfrrbs$seq_depth, levels = c("2M", "5M", "10M", "15M", "20M"))
-
-# Define comparisons
-my_comparisons <- list(
-  c("2M", "5M"),
-  c("5M", "10M"),
-  c("10M","15M"),
-  c("10M","20M"),
-  c("15M", "20M")
-)
-  
-# Plot with adjusted p-values (FDR) and significance only if p.adj < 0.05
-p1 <- ggplot(auc_cfrrbs, aes(x = seq_depth, y = AUC, fill = seq_depth)) +
-    geom_boxplot(outlier.shape = NA) +
-    facet_wrap(~ deconv_tool, ncol = 5) +
-    stat_compare_means(
-      method = "wilcox.test", comparisons = my_comparisons,
-      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                   
-      method.args = list(alternative="less"),
-      label.y = c(1, 1.05, 1.10, 1.15, 1.20), size = 3
-    ) +
-    labs(
-      title = "Entire RRBS-CL dataset",
-      x = "Sequencing Depth",
-      y = "AUC"
-    ) +
-    theme_classic() +
-    theme(axis.text.x = element_blank(),
-          axis.ticks.x = element_blank(),
-          panel.grid.major.y = element_line(color = "grey90"),
-          panel.grid.minor.y = element_line(color = "grey90")) +
-    scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF")) +
-    ylim(0.5,1.25)
-p1
-```
-
-```{r}
-# Create a directory to save the plots (optional)
-output_dir <- "../plots/03_seqdepth_robustness"
-if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
-
-# Save the plot as an image
-output_file <- file.path(output_dir, paste0("robustness_cfRRBS_aggregated.svg"))
-ggsave(output_file, plot = p1, width = 8, height = 6) 
 ```
 
 
@@ -622,12 +583,6 @@ for (tum in unique(auc_wgbs$tumor_type)) {
   p1 <- ggplot(df, aes(x = as.factor(expected_tf), y = AUC, fill = as.factor(expected_tf))) +
     geom_boxplot(outlier.shape = NA) +
     facet_wrap(~ deconv_tool, ncol = 5) +
-    #stat_compare_means(
-    #  method = "wilcox.test", comparisons = my_comparisons,
-    #  p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
-    #  method.args = list(alternative="less"),
-    #  label.y = c(1, 1.05, 1.10, 1.15), size = 3
-    #) +
     labs(
       title = paste0("WGBS-TT (",tum,") dataset"),
       x = "Sequencing Depth",
@@ -644,12 +599,12 @@ for (tum in unique(auc_wgbs$tumor_type)) {
   print(p1)
   
   # Save the plot as an image
-  output_file <- file.path(output_dir, paste0("expected_tf_AUC_WGBS_",tum,".svg"))
-  ggsave(output_file, plot = p1, width = 8, height = 6) 
+  output_file <- file.path(output_dir, paste0("expected_tf_AUC_boxplots_WGBS_",tum,".svg"))
+  ggsave(output_file, plot = p1, width = 9, height = 6) 
 }
 ```
 
-And do the same for aggregating per tumor type
+And do the same aggregating per tumor type
 
 
 ```{r warning=FALSE}
@@ -657,35 +612,47 @@ And do the same for aggregating per tumor type
 output_dir <- "../plots/03_seqdepth_robustness"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
+plot_auc_wgbs <- auc_wgbs %>%
+  group_by(deconv_tool, expected_tf) %>%
+  summarize(AUC = median(AUC))
+#plot_auc_wgbs$expected_tf <- as.numeric(as.character(plot_auc_wgbs$expected_tf))
+#plot_auc_wgbs$AUC <- as.numeric(as.character(plot_auc_wgbs$AUC))
 
-# Plot with adjusted p-values (FDR) and significance only if p.adj < 0.05
-p1 <- ggplot(auc_wgbs, aes(x = as.factor(expected_tf), y = AUC, fill = as.factor(expected_tf))) +
-    geom_boxplot(outlier.shape = NA) +
-    facet_wrap(~ deconv_tool, ncol = 5) +
-    #stat_compare_means(
-    #  method = "wilcox.test", comparisons = my_comparisons,
-    #  p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
-    #  method.args = list(alternative="less"),
-    #  label.y = c(1, 1.05, 1.10, 1.15), size = 3
-    #) +
-    labs(
-      title = paste0("WGBS dataset"),
-      x = "",
-      y = "AUC-ROC values",
-      fill = "Tumoral fraction"
-    ) +
-    theme_classic() +
-    theme(axis.text.x = element_blank(),
-          axis.ticks.x = element_blank(),
-          panel.grid.major.y = element_line(color = "grey90"),
-          panel.grid.minor.y = element_line(color = "grey90")) +
-    scale_fill_manual(values = col_values) +
-    ylim(0.5,1)
+p1 <- ggplot(plot_auc_wgbs, aes(
+    x = as.factor(expected_tf),
+    y = AUC
+  )) +
+  geom_point(
+    shape = 21, color = "black", size = 2.5, stroke = 0.8, alpha = 0.8,
+    aes(fill = as.factor(expected_tf))
+  ) +
+  # geom_smooth(
+  #   method = "nls", formula = y ~ a - b * exp(-c * x),
+  #   method.args = list(start = list(a = 1, b = 0.5, c = 20)),
+  #   se = F, color = "grey20", linewidth = 0.5, linetype = "dashed"
+  # ) +
+  geom_hline(yintercept = 0.9, color = "grey20", linetype = "dashed", linewidth = 0.7) +
+  facet_wrap(~ deconv_tool, ncol = 5) +
+  labs(
+    title = "WGBS-TT dataset",
+    x = "Tumoral fraction",
+    y = "AUC-ROC values",
+    fill = "Tumoral fraction"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey90"),
+    panel.grid.minor.y = element_line(color = "grey90")
+  ) +
+  scale_fill_manual(values = col_values)
 print(p1)
+
   
 # Save the plot as an image
-output_file <- file.path(output_dir, paste0("expected_tf_AUC_WGBS_aggregated.svg"))
-ggsave(output_file, plot = p1, width = 8, height = 6) 
+output_file <- file.path(output_dir, paste0("expected_tf_AUC_boxplots_WGBS_aggregated.svg"))
+ggsave(output_file, plot = p1, width = 9, height = 5) 
 ```
 
 ### RRBS-TT
@@ -728,7 +695,6 @@ for (type in unique(bench_rrbs$tumor_type)) {
     }
   }
 }
-
 
 auc_rrbs <- aucroc_data %>%
     group_by(deconv_tool, dmr_tool, tumor_type, seq_depth, expected_tf) %>%
@@ -784,12 +750,12 @@ for (tum in unique(auc_rrbs$tumor_type)) {
   print(p1)
   
   # Save the plot as an image
-  output_file <- file.path(output_dir, paste0("expected_tf_AUC_RRBS_",tum,".svg"))
-  ggsave(output_file, plot = p1, width = 8, height = 6) 
+  output_file <- file.path(output_dir, paste0("expected_tf_AUC_boxplots_RRBS_",tum,".svg"))
+  ggsave(output_file, plot = p1, width = 9, height = 5) 
 }
 ```
 
-And do the same for aggregating per tumor type
+And do the same aggregating per tumor type
 
 ```{r warning=FALSE}
 # Create a directory to save the plots (optional)
@@ -801,12 +767,6 @@ if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 p1 <- ggplot(auc_rrbs, aes(x = as.factor(expected_tf), y = AUC, fill = as.factor(expected_tf))) +
     geom_boxplot(outlier.shape = NA) +
     facet_wrap(~ deconv_tool, ncol = 5) +
-    #stat_compare_means(
-    #  method = "wilcox.test", comparisons = my_comparisons,
-    #  p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
-    #  method.args = list(alternative="less"),
-    #  label.y = c(1, 1.05, 1.10, 1.15), size = 3
-    #) +
     labs(
       title = paste0("RRBS-TT dataset"),
       x = "",
@@ -823,10 +783,60 @@ p1 <- ggplot(auc_rrbs, aes(x = as.factor(expected_tf), y = AUC, fill = as.factor
 print(p1)
   
 # Save the plot as an image
-output_file <- file.path(output_dir, paste0("expected_tf_AUC_RRBS_aggregated.svg"))
+output_file <- file.path(output_dir, paste0("expected_tf_AUC_boxplots_RRBS_aggregated.svg"))
 ggsave(output_file, plot = p1, width = 8, height = 6) 
 ```
 
+And do the same for aggregating per tumor type and just showing the median AUC-ROC 
+
+
+```{r warning=FALSE}
+# Create a directory to save the plots (optional)
+output_dir <- "../plots/03_seqdepth_robustness"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+plot_auc_rrbs <- auc_rrbs %>%
+  group_by(deconv_tool, expected_tf) %>%
+  summarize(AUC = median(AUC))
+#plot_auc_rrbs$expected_tf <- as.numeric(as.character(plot_auc_rrbs$expected_tf))
+#plot_auc_rrbs$AUC <- as.numeric(as.character(plot_auc_rrbs$AUC))
+
+p1 <- ggplot(plot_auc_rrbs, aes(
+    x = as.factor(expected_tf),
+    y = AUC
+  )) +
+  geom_point(
+    shape = 21, color = "black", size = 2.5, stroke = 0.8, alpha = 0.8,
+    aes(fill = as.factor(expected_tf))
+  ) +
+  # geom_smooth(
+  #   method = "nls", formula = y ~ a - b * exp(-c * x),
+  #   method.args = list(start = list(a = 1, b = 0.5, c = 20)),
+  #   se = F, color = "grey20", linewidth = 0.5, linetype = "dashed"
+  # ) +
+  geom_hline(yintercept = 0.9, color = "grey20", linetype = "dashed", linewidth = 0.7) +
+  facet_wrap(~ deconv_tool, ncol = 5) +
+  labs(
+    title = "RRBS-TT dataset",
+    x = "Tumoral fraction",
+    y = "AUC-ROC values",
+    fill = "Tumoral fraction"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey90"),
+    panel.grid.minor.y = element_line(color = "grey90")
+  ) +
+  scale_fill_manual(values = col_values)
+print(p1)
+
+  
+# Save the plot as an image
+output_file <- file.path(output_dir, paste0("expected_tf_AUC_dotplots_RRBS_aggregated.svg"))
+ggsave(output_file, plot = p1, width = 9, height = 5) 
+```
 
 ### RRBS-CL
 
@@ -902,12 +912,6 @@ for (tum in unique(auc_cfrrbs$tumor_type)) {
   p1 <- ggplot(df, aes(x = as.factor(expected_tf), y = AUC, fill = as.factor(expected_tf))) +
     geom_boxplot(outlier.shape = NA) +
     facet_wrap(~ deconv_tool, ncol = 5) +
-    #stat_compare_means(
-    #  method = "wilcox.test", comparisons = my_comparisons,
-    #  p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
-    #  method.args = list(alternative="less"),
-    #  label.y = c(1, 1.05, 1.10, 1.15), size = 3
-    #) +
     labs(
       title = paste0("RRBS-CL (",tum,") dataset"),
       x = "Sequencing Depth",
@@ -923,51 +927,60 @@ for (tum in unique(auc_cfrrbs$tumor_type)) {
   print(p1)
   
   # Save the plot as an image
-  output_file <- file.path(output_dir, paste0("expected_tf_AUC_cfRRBS_",tum,".svg"))
+  output_file <- file.path(output_dir, paste0("expected_tf_boxplots_AUC_cfRRBS_",tum,".svg"))
   ggsave(output_file, plot = p1, width = 8, height = 6) 
 }
 ```
 
-And do the same for aggregating per tumor type
+And do the same aggregating per tumor type and showing the median AUC-ROC value
+
 
 ```{r warning=FALSE}
 # Create a directory to save the plots (optional)
 output_dir <- "../plots/03_seqdepth_robustness"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
+plot_auc_cfrrbs <- auc_cfrrbs %>%
+  group_by(deconv_tool, expected_tf) %>%
+  summarize(AUC = median(AUC))
+#plot_auc_cfrrbs$expected_tf <- as.numeric(as.character(plot_auc_cfrrbs$expected_tf))
+#plot_auc_cfrrbs$AUC <- as.numeric(as.character(plot_auc_cfrrbs$AUC))
 
-# Plot with adjusted p-values (FDR) and significance only if p.adj < 0.05
-p1 <- ggplot(auc_cfrrbs, aes(x = as.factor(expected_tf), y = AUC, fill = as.factor(expected_tf))) +
-    geom_boxplot(outlier.shape = NA) +
-    facet_wrap(~ deconv_tool, ncol = 5) +
-    #stat_compare_means(
-    #  method = "wilcox.test", comparisons = my_comparisons,
-    #  p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
-    #  method.args = list(alternative="less"),
-    #  label.y = c(1, 1.05, 1.10, 1.15), size = 3
-    #) +
-    labs(
-      title = paste0("RRBS-CL dataset"),
-      x = "",
-      y = "AUC-ROC values",
-      fill = "Tumoral fraction"
-    ) +
-    theme_classic() +
-    theme(axis.text.x = element_blank(),
-          axis.ticks.x = element_blank(),
-          panel.grid.major.y = element_line(color = "grey90"),
-          panel.grid.minor.y = element_line(color = "grey90")) +
-    scale_fill_manual(values = col_values) +
-    ylim(0.5,1)
-print(p1)
-  
+p1 <- ggplot(plot_auc_cfrrbs, aes(
+    x = as.factor(expected_tf),
+    y = AUC
+  )) +
+  geom_point(
+    shape = 21, color = "black", size = 2.5, stroke = 0.8, alpha = 0.8,
+    aes(fill = as.factor(expected_tf))
+  ) +
+  # geom_smooth(
+  #   method = "nls", formula = y ~ a - b * exp(-c * x),
+  #   method.args = list(start = list(a = 1, b = 0.5, c = 20)),
+  #   se = F, color = "grey20", linewidth = 0.5, linetype = "dashed"
+  # ) +
+  geom_hline(yintercept = 0.9, color = "grey20", linetype = "dashed", linewidth = 0.7) +
+  facet_wrap(~ deconv_tool, ncol = 5) +
+  labs(
+    title = "RRBS-CL dataset",
+    x = "Tumoral fraction",
+    y = "AUC-ROC values",
+    fill = "Tumoral fraction"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey90"),
+    panel.grid.minor.y = element_line(color = "grey90")
+  ) +
+  scale_fill_manual(values = col_values)
+print(p1)  
+
 # Save the plot as an image
-output_file <- file.path(output_dir, paste0("expected_tf_AUC_cfRRBS_aggregated.svg"))
-ggsave(output_file, plot = p1, width = 8, height = 6) 
+output_file <- file.path(output_dir, paste0("expected_tf_AUC_dotplots_cfRRBS_aggregated.svg"))
+ggsave(output_file, plot = p1, width = 9, height = 5) 
 ```
-
-
-
 
 
 

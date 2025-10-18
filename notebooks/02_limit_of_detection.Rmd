@@ -117,7 +117,15 @@ all.stats <- all.stats %>%
   mutate(
     rank_raw = rank(lod, ties.method = "min")
   )
-#write.csv(all.stats, paste0(dir_path,"/resources/lod_allstats.csv"))
+
+# Extract the median overall LoD for rownames
+lod_median <- all.stats %>%
+  group_by(deconv_tool) %>%
+  summarise(LoD = median(lod))
+row_order <- lod_median %>%
+  arrange(LoD) %>%
+  pull(deconv_tool)
+#write.csv(all.stats, "../resources/lod_allstats.csv")
 ```
 
 ## Plot the results
@@ -137,8 +145,6 @@ lod_tools_aggr_wgbs <- all.stats %>%
 ```{r}
 # Define the exact order you want
 col_order <- c("62M", "183M", "310M", "620M")
-row_order_wgbs <- c("CelFiE", "UXM", "EpiDISH_CP_ineq", "EpiDISH_CP_eq", "MetDecode",
-                    "meth_atlas", "PRMeth", "EpiSCORE", "EpiDISH_RPC", "CIBERSORT")
 
 # Build the matrix
 mat_wgbs <- lod_tools_aggr_wgbs %>%
@@ -148,7 +154,7 @@ mat_wgbs <- lod_tools_aggr_wgbs %>%
   ) %>%
   column_to_rownames(var = "deconv_tool") %>% 
   select(all_of(col_order))
-mat_wgbs <- mat_wgbs[row_order_wgbs, ]
+mat_wgbs <- mat_wgbs[row_order, ]
 
 # Define the palette
 col_fun <- colorRamp2(
@@ -211,8 +217,6 @@ lod_tools_aggr_rrbs <- all.stats %>%
 ```{r}
 # Define the exact order you want
 col_order <- c("2M", "5M", "10M", "15M", "20M")
-row_order_rrbs <- c("CelFiE", "UXM", "EpiDISH_CP_ineq", "EpiDISH_CP_eq", "MetDecode",
-                    "meth_atlas", "PRMeth", "EpiSCORE", "EpiDISH_RPC", "CIBERSORT")
 
 # Build the matrix
 mat_rrbs <- lod_tools_aggr_rrbs %>%
@@ -222,7 +226,7 @@ mat_rrbs <- lod_tools_aggr_rrbs %>%
   ) %>%
   column_to_rownames(var = "deconv_tool") %>% 
   select(all_of(col_order))
-mat_rrbs <- mat_rrbs[row_order_rrbs, ]
+mat_rrbs <- mat_rrbs[row_order, ]
 
 # Define the palette
 col_fun <- colorRamp2(
@@ -283,8 +287,6 @@ lod_tools_aggr_cfrrbs <- all.stats %>%
 ```{r}
 # Define the exact order you want
 col_order <- c("2M", "5M", "10M", "15M", "20M")
-row_order_cfrrbs <- c("CelFiE", "UXM", "EpiDISH_CP_ineq", "EpiDISH_CP_eq", "MetDecode",
-                    "meth_atlas", "PRMeth", "EpiSCORE", "EpiDISH_RPC", "CIBERSORT")
 
 # Build the matrix
 mat_cfrrbs <- lod_tools_aggr_cfrrbs %>%
@@ -294,7 +296,7 @@ mat_cfrrbs <- lod_tools_aggr_cfrrbs %>%
   ) %>%
   column_to_rownames(var = "deconv_tool") %>% 
   select(all_of(col_order))
-mat_cfrrbs <- mat_cfrrbs[row_order_cfrrbs, ]
+mat_cfrrbs <- mat_cfrrbs[row_order, ]
 
 # Define the palette
 col_fun <- colorRamp2(
@@ -336,6 +338,49 @@ if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save to PDF
 pdf(paste0(output_dir,"/heatmap_lod_cfrrbs.pdf"), width = 6, height = 5)
+draw(p)
+dev.off()
+```
+
+### Plot the overall median LoD
+
+
+```{r}
+# Build the matrix
+mat_overall <- lod_median %>%
+  column_to_rownames(var = "deconv_tool") %>%
+  arrange(LoD)
+
+# Define the palette
+col_fun <- colorRamp2(
+  c(0.0001, 0.007, 0.01, 0.05, max(mat_rrbs)),
+  c("#67000d", "#cb181d", "#ef3b2c", "#fb6a4a", "#FAEBDDFF")
+)
+```
+
+
+```{r}
+p <- Heatmap(mat_overall,
+        name = "Limit of Detection",
+        col = col_fun,
+        cluster_rows = F,
+        show_column_names = T,
+        cluster_columns = F,
+        column_names_side = "top",
+        row_names_gp = gpar(fontsize = 12),
+        column_names_gp = gpar(fontsize = 12),
+        column_names_rot = 0, 
+        column_names_centered = T)
+p
+```
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/02_lod_heatmaps"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Save to PDF
+pdf(paste0(output_dir,"/heatmap_lod_median.pdf"), width = 5, height = 5)
 draw(p)
 dev.off()
 ```

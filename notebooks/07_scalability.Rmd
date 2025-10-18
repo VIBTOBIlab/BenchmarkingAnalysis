@@ -139,16 +139,18 @@ We can also check how the memory changes increasing the number of DMRs and sampl
 
 ```{r}
 tool_colors <- c(
-  "CELFIE"             ="#A6CEE3", 
-  "CIBERSORT"          ="#1F78B4",
-  "EPIDISH_eq"      ="#B2DF8A", 
-  "EPIDISH_ineq"    ="#33A02C",
-  "EPIDISH_RPC"        ="#FB9A99", 
-  "EPISCORE"           ="#E31A1C",
-  "METDECODE"          ="#FDBF6F", 
-  "METH_ATLAS"         ="#FF7F00",
-  "PRMETH"             ="#CAB2D6", 
-  "UXM"                ="#6A3D9A"
+  "CELFiE"         = "#A6CEE3",
+  "CIBERSORT"      = "#1F78B4",
+  "Houseman_eq"    = "#B2DF8A",
+  "Houseman_ineq"  = "#33A02C",
+  "EpiDISH"        = "#FB9A99",
+  "EpiSCORE"      = "#E31A1C",
+  "MetDecode"     = "#FDBF6F",
+  "meth_atlas"    = "#FF7F00",
+  "PRMeth"        = "#CAB2D6",
+  "UXM"           = "#6A3D9A",
+  "MeDeCom"       = "#66C2A5",  # teal
+  "RefFreeCellMix"     = "#666666"   # dark grey-blue
 )
 ```
 
@@ -170,8 +172,7 @@ p1 <- ggplot(summary_df_dmr, aes(x = dmr, y = mean_rss, color = name)) +
   theme_classic() +
   theme(legend.position = "none") +
   scale_color_manual(values = tool_colors) +
-  scale_x_continuous(breaks = c(25, 100, 250, 500)) +
-  ylim(0,800)
+  scale_x_continuous(breaks = c(25, 100, 250, 500))
 
 p2 <- ggplot(summary_df_samples, aes(x = samples, y = mean_rss, color = name)) +
   geom_line() +
@@ -180,8 +181,7 @@ p2 <- ggplot(summary_df_samples, aes(x = samples, y = mean_rss, color = name)) +
        x = "Number of samples", y = "") +
   theme_classic() +
   scale_color_manual(values = tool_colors) +
-  scale_x_continuous(breaks = c(5, 20, 50, 100)) +
-  ylim(0,800)
+  scale_x_continuous(breaks = c(5, 20, 50, 100))
 
 # Show plots
 combined.plot <- p1 + p2
