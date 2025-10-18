@@ -9,7 +9,22 @@ The tutorials included here guide you through the main analyses presented in the
 
 ---
 
-## Repository Structure
+## 📚 Table of Contents
+
+1. [Repository Structure](#repository-structure)
+2. [Run the R markdown notebooks](#run-the-r-markdown-notebooks)
+   - [Run the analyses using Docker](#run-the-analyses-using-a-docker-container)
+   - [Run the analyses locally](#run-the-analyses-with-locally-installed-dependencies)
+   - [Analysis workflow](#analysis-workflow)
+   - [Summary of output structure](#summary-of-output-structure)
+3. [Calculate the sequencing saturation curves](#sequencing-saturation-calculation)
+   - [What is a sequencing saturation curve?](#sequencing-saturation-calculation)
+   - [Run the sequencing saturation calculation](#31-how-to-run-a-sequencing-saturation-calculation)
+
+
+---
+
+## 1. Repository Structure
 
 ```
 .
@@ -22,8 +37,9 @@ The tutorials included here guide you through the main analyses presented in the
 ```
 
 ---
+## 2. Run the R markdown notebooks
 
-## Run the analyses using a Docker container
+### 2.1 Run the analyses using a Docker container
 
 You can run the full analysis inside a Docker container (already built using the following [Dockerfile](Docker/Dockerfile)) without manually installing dependencies:
 
@@ -36,16 +52,17 @@ You can run the full analysis inside a Docker container (already built using the
       -v "$(pwd)":/home/rstudio/benchmark \
       egiuili/benchmark-rstudio:v3
    ```
-2. Open http://localhost:8787 in your web browser to access RStudio Server inside the container.
 
-   - Default username: rstudio
-   - Default password: mypassword
+2. Open [http://localhost:8787](http://localhost:8787) in your web browser to access RStudio Server inside the container.
 
-Once logged in, you can open and run the .Rmd notebooks located in /home/rstudio/benchmark/notebooks/.
+   * Default username: `rstudio`
+   * Default password: `mypassword`
+
+Once logged in, you can open and run the `.Rmd` notebooks located in `/home/rstudio/benchmark/notebooks/`.
 
 ---
 
-## Run the analyses with locally installed dependencies
+### 2.2 Run the analyses with locally installed dependencies
 
 Alternatively, you can run the analysis using your local environment, but make sure that the following R packages are installed before running the notebooks.
 
@@ -67,13 +84,13 @@ BiocManager::install(c("ComplexHeatmap", "circlize"))
 
 ---
 
-## Analysis Workflow
+### 2.3 Analysis Workflow
 
 The analyses should be run in the following order. Each notebook generates plots saved in a dedicated subfolder under `plots/`:
 
 1. **01_heatmaps_all_combinations.Rmd**
 
-   * Generates heatmaps of all possible in silico mixture combinations.
+   * Generates heatmaps of all possible *in silico* mixture combinations.
    * Outputs to `plots/01_comprehensive_heatmaps/`.
 
 2. **02_limit_of_detection.Rmd**
@@ -114,9 +131,10 @@ The analyses should be run in the following order. Each notebook generates plots
 
    * Analyzes and visualizes **RMSE and SCC for tumor fraction prediction accuracy**.
    * Outputs to `plots/08_preciseness/`.
+
 ---
 
-## Summary of Output Structure
+### 2.4 Summary of Output Structure
 
 After running the notebooks, the `plots/` folder will be organized as follows:
 
@@ -128,8 +146,59 @@ plots/
 ├── 04_refree_vs_refbased/       # Reference-free vs. reference-based comparison plots
 ├── 05_additional_plots/         # Ranking and additional visualizations
 ├── 06_funkyheatmap/             # Funkyheatmap figure from publication
-└── 07_scalability/              # Scalability analysis plots
+├── 07_scalability/              # Scalability analysis plots
 └── 08_preciseness/              # Preciseness analysis plots
 ```
 
 ---
+
+## 3. What is a sequencing saturation curve?
+
+To calculate the **sequencing saturation** of an RRBS sample, we adopted the following strategy:
+
+For each unique sample (e.g., an *in silico* mixture composed of 10% tumor reads and 90% healthy reads), we computed the number of **unique CpGs covered by at least 3 reads** at five different sequencing depths: **2M, 5M, 10M, 15M, and 20M**.
+
+We then fit the following curve using the `scipy.optimize.curve_fit` function:
+
+$$
+y = \beta_0 \cdot \arctan(\beta_1 \cdot x)
+$$
+
+We chose the **arctangent function** because it exhibits an **asymptotic growth** similar to sequencing saturation.
+For large values of $x$ (as $x \to \infty$), the asymptote can be computed as:
+
+$$
+\text{asymptote} = \beta_0 \cdot \frac{\pi}{2}
+$$
+
+The **sequencing saturation value** at each depth was then calculated as:
+
+$$
+\text{Saturation} = \frac{\text{Number of unique CpGs (≥3 counts)}}{\text{Asymptote}}
+$$
+
+This approach allows estimation of the theoretical **maximum number of CpGs** that can be detected given an infinite sequencing depth, and quantifies how close each sample is to reaching sequencing saturation.
+
+---
+
+### 3.1 How to run a sequencing saturation calculation
+
+You can reproduce the sequencing saturation analysis using the provided Python script:
+
+```bash
+# If not, install matplotlib
+pip install matplotlib==3.9.2
+# Run the script
+python3 resources/plot_seqstat.py \
+    --cpgs_file resources/cov_cpgcounts.csv \
+    --read_file resources/bam_readcounts.csv \
+    --percentages 0.1,0.25,0.50,0.75,1
+```
+Where the [**--cpgs_file**](resources/cov_cpgcounts.csv) corresponds to a csv file with sample name, percentage of downsampling, minimum number of counts per CpGs used and number of CpGs found the the corresponding COV file. To calculate the number of CpGs in a COV file you can run the following script:
+
+```bash
+zcat <your_cov.gz_file> | awk -v OFS='\t' -v i="$i" '$5 + $6 >= 3' | wc -l
+```
+Where 3 corresponds to the minimum number of counts per CpGs.
+
+The [**--read_file**](resources/bam_readcounts.csv) corresponds to a csv file with sample name, percentage of downsampling and number of reads present in that BAM samples.
