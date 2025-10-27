@@ -190,8 +190,8 @@ You can reproduce the sequencing saturation analysis using the provided Python s
 pip install numpy pandas matplotlib scipy
 # Run the script
 python3 resources/plot_seqstat.py \
-    --cpgs_file resources/cov_cpgcounts.csv \
-    --read_file resources/bam_readcounts.csv \
+    --cpgs_file resources/cov_cpgcounts_rrbs.csv \
+    --read_file resources/bam_readcounts_rrbs.csv \
     --percentages 0.1,0.25,0.50,0.75,1
 ```
 Where the [**--cpgs_file**](resources/cov_cpgcounts.csv) corresponds to a csv file with sample name, percentage of downsampling, minimum number of counts per CpGs used and number of CpGs found the the corresponding COV file. To calculate the number of CpGs in a COV file you can run the following script:
