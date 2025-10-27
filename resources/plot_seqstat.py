@@ -8,6 +8,7 @@ Author: Edoardo Giuili
 """
 
 import sys
+import os
 import warnings
 import argparse
 import numpy as np
@@ -84,7 +85,7 @@ def plot_data(x_data, y_data, reads, asymptote, params, output_path, title):
     ax1.plot(x_pred, y_pred, "|", color="black", markersize=10)
 
     # Add percentage annotations
-    for i in range(4, len(x_pred)):
+    for i in range(3, len(x_pred)):
         ax1.text(
             x_pred[i], y_pred[i] - 0.09 * y_pred[i],
             f"{y_diff[i]:.1f}%", color="black", fontsize=10, ha="center"
@@ -150,7 +151,7 @@ def plot_reads_vs_cpgs(data, output_path, percentages):
         plot_error_data(x_data, y_data, reads, output_path, title, error_msg)
 
 
-def select_sample(cpgs_file, reads_file, percentages):
+def select_sample(cpgs_file, reads_file, percentages,out_dir):
     """Main routine to process each sample and generate plots."""
     col_cpgs = ["sample", "percentage", "min_counts", "cpgs_counts"]
     col_reads = ["sample", "percentage", "reads_counts"]
@@ -163,7 +164,8 @@ def select_sample(cpgs_file, reads_file, percentages):
         sample_data = data[data["sample"] == sample]
         for min_val in sample_data["min_counts"].unique():
             subset = sample_data[sample_data["min_counts"] == min_val].sort_values(by="percentage")
-            output_path = f"{sample}_{min_val}x_plot.png"
+            #if out_dir is
+            output_path = f"{out_dir}/{sample}_{min_val}x_plot.svg"
 
             if subset.duplicated().any():
                 print(f"❌ Duplicated rows found in {sample}. "
@@ -183,11 +185,19 @@ def main():
     parser.add_argument("--read_file", required=True, help="Path to the Reads CSV file.")
     parser.add_argument("--percentages", required=True,
                         help="Comma-separated list of downsampling percentages (e.g. 0.25,0.5,0.75,1).")
+    parser.add_argument("--outdir", required=False, help="Output directory path to save the plots. Default is current directory.", default=".")
 
     args = parser.parse_args()
     percentages = [float(p) for p in args.percentages.split(",")]
 
-    select_sample(args.cpgs_file, args.read_file, percentages)
+    # Check if output directory exists, create if not
+    if not os.path.exists(args.outdir):
+        os.makedirs(args.outdir, exist_ok=True)
+        print(f"Created output directory: {args.outdir}")
+    else:
+        print(f"Using existing output directory: {args.outdir}")
+
+    select_sample(args.cpgs_file, args.read_file, percentages, args.outdir)
 
 
 if __name__ == "__main__":
