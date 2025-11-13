@@ -557,7 +557,7 @@ auc_wgbs <- aucroc_data %>%
 ```
 
 
-We can now plot the AUC-ROC score distribution using boxplots across the different expected tumoral fraction, for each tool and for each different tumor type.
+We can now plot the median AUC-ROC score across the different expected tumoral fraction, for each tool and aggregating [er] tumor type.
 
 ```{r}
 # Define the color palette of the fractions
@@ -573,50 +573,9 @@ col_values <- c("1e-04" = "#DEEBF7", "0.001" = "#C6DBEF", "0.003" = "#9ECAE1",
 output_dir <- "../plots/03_seqdepth_robustness"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
-# Loop over the tumor types
-for (tum in unique(auc_wgbs$tumor_type)) {
-  
-  # Subset the dataframe on the tumor type
-  df <- subset(auc_wgbs, auc_wgbs$tumor_type==tum)
-  
-  # Plot with adjusted p-values (FDR) and significance only if p.adj < 0.05
-  p1 <- ggplot(df, aes(x = as.factor(expected_tf), y = AUC, fill = as.factor(expected_tf))) +
-    geom_boxplot(outlier.shape = NA) +
-    facet_wrap(~ deconv_tool, ncol = 5) +
-    labs(
-      title = paste0("WGBS-TT (",tum,") dataset"),
-      x = "Sequencing Depth",
-      y = "AUC",
-      fill = "Tumoral fraction"
-    ) +
-    theme_classic() +
-    theme(axis.text.x = element_blank(),
-          axis.ticks.x = element_blank(),
-          panel.grid.major.y = element_line(color = "grey90"),
-          panel.grid.minor.y = element_line(color = "grey90")) +
-    scale_fill_manual(values = col_values) +
-    ylim(0.5,1)
-  print(p1)
-  
-  # Save the plot as an image
-  output_file <- file.path(output_dir, paste0("expected_tf_AUC_boxplots_WGBS_",tum,".svg"))
-  ggsave(output_file, plot = p1, width = 9, height = 6) 
-}
-```
-
-And do the same aggregating per tumor type
-
-
-```{r warning=FALSE}
-# Create a directory to save the plots (optional)
-output_dir <- "../plots/03_seqdepth_robustness"
-if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
-
 plot_auc_wgbs <- auc_wgbs %>%
   group_by(deconv_tool, expected_tf) %>%
   summarize(AUC = median(AUC))
-#plot_auc_wgbs$expected_tf <- as.numeric(as.character(plot_auc_wgbs$expected_tf))
-#plot_auc_wgbs$AUC <- as.numeric(as.character(plot_auc_wgbs$AUC))
 
 p1 <- ggplot(plot_auc_wgbs, aes(
     x = as.factor(expected_tf),
@@ -626,11 +585,6 @@ p1 <- ggplot(plot_auc_wgbs, aes(
     shape = 21, color = "black", size = 2.5, stroke = 0.8, alpha = 0.8,
     aes(fill = as.factor(expected_tf))
   ) +
-  # geom_smooth(
-  #   method = "nls", formula = y ~ a - b * exp(-c * x),
-  #   method.args = list(start = list(a = 1, b = 0.5, c = 20)),
-  #   se = F, color = "grey20", linewidth = 0.5, linetype = "dashed"
-  # ) +
   geom_hline(yintercept = 0.9, color = "grey20", linetype = "dashed", linewidth = 0.7) +
   facet_wrap(~ deconv_tool, ncol = 5) +
   labs(
@@ -651,7 +605,7 @@ print(p1)
 
   
 # Save the plot as an image
-output_file <- file.path(output_dir, paste0("expected_tf_AUC_boxplots_WGBS_aggregated.svg"))
+output_file <- file.path(output_dir, paste0("expected_tf_AUC_dotplots_WGBS_aggregated.svg"))
 ggsave(output_file, plot = p1, width = 9, height = 5) 
 ```
 
@@ -702,7 +656,7 @@ auc_rrbs <- aucroc_data %>%
 ```
 
 
-We can now plot the AUC-ROC score distribution using boxplots across the different expected tumoral fraction, for each tool and for each different tumor type.
+We can now plot the median AUC-ROC score across the different expected tumoral fraction, for each tool and aggregating tumor type.
 
 ```{r}
 # Define the color palette of the fractions
@@ -718,88 +672,9 @@ col_values <- c("1e-04" = "#DEEBF7", "0.001" = "#C6DBEF", "0.003" = "#9ECAE1",
 output_dir <- "../plots/03_seqdepth_robustness"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
-# Loop over the tumor types
-for (tum in unique(auc_rrbs$tumor_type)) {
-  
-  # Subset the dataframe on the tumor type
-  df <- subset(auc_rrbs, auc_rrbs$tumor_type==tum)
-  
-  # Plot with adjusted p-values (FDR) and significance only if p.adj < 0.05
-  p1 <- ggplot(df, aes(x = as.factor(expected_tf), y = AUC, fill = as.factor(expected_tf))) +
-    geom_boxplot(outlier.shape = NA) +
-    facet_wrap(~ deconv_tool, ncol = 5) +
-    #stat_compare_means(
-    #  method = "wilcox.test", comparisons = my_comparisons,
-    #  p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
-    #  method.args = list(alternative="less"),
-    #  label.y = c(1, 1.05, 1.10, 1.15), size = 3
-    #) +
-    labs(
-      title = paste0("RRBS-TT (",tum,") dataset"),
-      x = "Sequencing Depth",
-      y = "AUC",
-      fill = "Tumoral fraction"
-    ) +
-    theme_classic() +
-    theme(axis.text.x = element_blank(),
-          axis.ticks.x = element_blank(),
-          panel.grid.major.y = element_line(color = "grey90"),
-          panel.grid.minor.y = element_line(color = "grey90")) +
-    scale_fill_manual(values = col_values) +
-    ylim(0.5,1)
-  print(p1)
-  
-  # Save the plot as an image
-  output_file <- file.path(output_dir, paste0("expected_tf_AUC_boxplots_RRBS_",tum,".svg"))
-  ggsave(output_file, plot = p1, width = 9, height = 5) 
-}
-```
-
-And do the same aggregating per tumor type
-
-```{r warning=FALSE}
-# Create a directory to save the plots (optional)
-output_dir <- "../plots/03_seqdepth_robustness"
-if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
-
-
-# Plot with adjusted p-values (FDR) and significance only if p.adj < 0.05
-p1 <- ggplot(auc_rrbs, aes(x = as.factor(expected_tf), y = AUC, fill = as.factor(expected_tf))) +
-    geom_boxplot(outlier.shape = NA) +
-    facet_wrap(~ deconv_tool, ncol = 5) +
-    labs(
-      title = paste0("RRBS-TT dataset"),
-      x = "",
-      y = "AUC-ROC values",
-      fill = "Tumoral fraction"
-    ) +
-    theme_classic() +
-    theme(axis.text.x = element_blank(),
-          axis.ticks.x = element_blank(),
-          panel.grid.major.y = element_line(color = "grey90"),
-          panel.grid.minor.y = element_line(color = "grey90")) +
-    scale_fill_manual(values = col_values) +
-    ylim(0.5,1)
-print(p1)
-  
-# Save the plot as an image
-output_file <- file.path(output_dir, paste0("expected_tf_AUC_boxplots_RRBS_aggregated.svg"))
-ggsave(output_file, plot = p1, width = 8, height = 6) 
-```
-
-And do the same for aggregating per tumor type and just showing the median AUC-ROC 
-
-
-```{r warning=FALSE}
-# Create a directory to save the plots (optional)
-output_dir <- "../plots/03_seqdepth_robustness"
-if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
-
 plot_auc_rrbs <- auc_rrbs %>%
   group_by(deconv_tool, expected_tf) %>%
   summarize(AUC = median(AUC))
-#plot_auc_rrbs$expected_tf <- as.numeric(as.character(plot_auc_rrbs$expected_tf))
-#plot_auc_rrbs$AUC <- as.numeric(as.character(plot_auc_rrbs$AUC))
 
 p1 <- ggplot(plot_auc_rrbs, aes(
     x = as.factor(expected_tf),
@@ -809,11 +684,6 @@ p1 <- ggplot(plot_auc_rrbs, aes(
     shape = 21, color = "black", size = 2.5, stroke = 0.8, alpha = 0.8,
     aes(fill = as.factor(expected_tf))
   ) +
-  # geom_smooth(
-  #   method = "nls", formula = y ~ a - b * exp(-c * x),
-  #   method.args = list(start = list(a = 1, b = 0.5, c = 20)),
-  #   se = F, color = "grey20", linewidth = 0.5, linetype = "dashed"
-  # ) +
   geom_hline(yintercept = 0.9, color = "grey20", linetype = "dashed", linewidth = 0.7) +
   facet_wrap(~ deconv_tool, ncol = 5) +
   labs(
@@ -886,7 +756,7 @@ auc_cfrrbs <- aucroc_data %>%
 ```
 
 
-We can now plot the AUC-ROC score distribution using boxplots across the different expected tumoral fraction, for each tool and for each different tumor type.
+We can now plot the median AUC-ROC score across the different expected tumoral fraction, for each tool and aggregating per tumor type.
 
 ```{r}
 # Define the color palette of the fractions
@@ -902,49 +772,9 @@ col_values <- c("1e-04" = "#DEEBF7", "0.001" = "#C6DBEF", "0.003" = "#9ECAE1",
 output_dir <- "../plots/03_seqdepth_robustness"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
-# Loop over the tumor types
-for (tum in unique(auc_cfrrbs$tumor_type)) {
-  
-  # Subset the dataframe on the tumor type
-  df <- subset(auc_cfrrbs, auc_cfrrbs$tumor_type==tum)
-  
-  # Plot with adjusted p-values (FDR) and significance only if p.adj < 0.05
-  p1 <- ggplot(df, aes(x = as.factor(expected_tf), y = AUC, fill = as.factor(expected_tf))) +
-    geom_boxplot(outlier.shape = NA) +
-    facet_wrap(~ deconv_tool, ncol = 5) +
-    labs(
-      title = paste0("RRBS-CL (",tum,") dataset"),
-      x = "Sequencing Depth",
-      y = "AUC",
-      fill = "Tumoral fraction"
-    ) +
-    theme_classic() +
-    theme(axis.text.x = element_blank(),
-          axis.ticks.x = element_blank(),
-          panel.grid.major.y = element_line(color = "grey90"),
-          panel.grid.minor.y = element_line(color = "grey90")) +
-    scale_fill_manual(values = col_values)
-  print(p1)
-  
-  # Save the plot as an image
-  output_file <- file.path(output_dir, paste0("expected_tf_boxplots_AUC_cfRRBS_",tum,".svg"))
-  ggsave(output_file, plot = p1, width = 8, height = 6) 
-}
-```
-
-And do the same aggregating per tumor type and showing the median AUC-ROC value
-
-
-```{r warning=FALSE}
-# Create a directory to save the plots (optional)
-output_dir <- "../plots/03_seqdepth_robustness"
-if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
-
 plot_auc_cfrrbs <- auc_cfrrbs %>%
   group_by(deconv_tool, expected_tf) %>%
   summarize(AUC = median(AUC))
-#plot_auc_cfrrbs$expected_tf <- as.numeric(as.character(plot_auc_cfrrbs$expected_tf))
-#plot_auc_cfrrbs$AUC <- as.numeric(as.character(plot_auc_cfrrbs$AUC))
 
 p1 <- ggplot(plot_auc_cfrrbs, aes(
     x = as.factor(expected_tf),
@@ -954,11 +784,6 @@ p1 <- ggplot(plot_auc_cfrrbs, aes(
     shape = 21, color = "black", size = 2.5, stroke = 0.8, alpha = 0.8,
     aes(fill = as.factor(expected_tf))
   ) +
-  # geom_smooth(
-  #   method = "nls", formula = y ~ a - b * exp(-c * x),
-  #   method.args = list(start = list(a = 1, b = 0.5, c = 20)),
-  #   se = F, color = "grey20", linewidth = 0.5, linetype = "dashed"
-  # ) +
   geom_hline(yintercept = 0.9, color = "grey20", linetype = "dashed", linewidth = 0.7) +
   facet_wrap(~ deconv_tool, ncol = 5) +
   labs(

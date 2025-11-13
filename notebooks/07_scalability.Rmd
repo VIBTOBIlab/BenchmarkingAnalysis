@@ -7,7 +7,7 @@ output: html_document
 
 ## Introduction
 
-In this tutorial we will go over the scalability results in terms of running time and memory usage. To compute the scalability of the tools we used the following strategy. We selected 5, 25, 50 and 100 in silico mixtures from the NBL cfRRBS dataset and we run each tool using sequentially 25, 50, 100, 250 and 500 DMRs. Second, we extracted the memory peak and the real time computed automatically by the Nextflow pipeline for each individual deconvolution tool. We run this analysis allocating to each deconvolution tool 8 CPUs and 16GB of memory, the minimum required resources to run the pipeline.
+In this tutorial we will go over the scalability results in terms of running time and memory usage. To compute the scalability of the tools we used the following strategy. We selected 5, 25, 50 and 100 in silico mixtures from the RRBS-CL and we run each tool using sequentially 25, 50, 100, 250 and 500 DMRs (or regions for reference-free methods). Second, we extracted the memory peak and the real time computed automatically by the Nextflow pipeline for each individual deconvolution tool. We run this analysis allocating to each deconvolution tool 8 CPUs and 16GB of memory, the minimum required resources to run the pipeline.
 
 ### Setting up the environment
 
@@ -139,7 +139,7 @@ We can also check how the memory changes increasing the number of DMRs and sampl
 
 ```{r}
 tool_colors <- c(
-  "CELFiE"         = "#A6CEE3",
+  "CelFiE"         = "#A6CEE3",
   "CIBERSORT"      = "#1F78B4",
   "Houseman_eq"    = "#B2DF8A",
   "Houseman_ineq"  = "#33A02C",

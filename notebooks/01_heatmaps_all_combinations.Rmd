@@ -7,11 +7,11 @@ author: "Edoardo Giuili"
 
 ## Introduction
 
-This is the first notebook to reproduce the analysis of the bench.resmarking results. More specifically, in this notebook we will go over the results obtained on the in-silico mixtures. In total, 1640 WGBS, 1550 and 440 samples (WGBS, RRBS and MNase-cfRRBS, respectively) have been deconvolved. These samples were generated at different sequencing depths, spanning 10 expected tumor fractions, different tumor types and using 3 DMR selection tools. We will therefore generate plots for all these combinations, step by step.
+This is the first notebook to reproduce the analysis of the benchmarking results. More specifically, in this notebook we will go over the results obtained on the in-silico mixtures. In total, 1640 WGBS, 1500 and 550 samples (WGBS-TT, RRBS-TT and RRBS-CL, respectively) have been deconvolved. These samples were generated at different sequencing depths, spanning 10 expected tumor fractions, different tumor types and using 3 DMR selection tools. We will therefore generate plots for all these combinations, step by step.
 
 ### Benchmarking metrics
 
-It is important to highlight that to evaluate the performance of the deconvolution tools we considered 3 different key metrics: the root-mean-squared error (RMSE), the area under the curve (AUC-ROC) and the Spearman's rank correlation coefficient (ρ {\displaystyle \rho }).
+It is important to highlight that to evaluate the performance of the deconvolution tools we considered 4 different key metrics: the root-mean-squared error (RMSE), the area under the curve (AUC-ROC), the Spearman's rank correlation coefficient (ρ {\displaystyle \rho }) and the tumoral limit of detection (LoD).
 
 ### Setting up the environment
 
@@ -82,7 +82,7 @@ bench.res <- bench.res %>%
 
 ### Heatmap of all combinations
 
-As a first step in the analysis, we think that a comprehensive heatamap of all possible combinations might be useful as a starting point. We will first compute the metrics necessary for the heatmap: being RMSE, AUC-ROC value and SCC. Since the RMSE is not a scale-free metric, it will increase at increasing observed tumoral fraction. This determines that the RMSE at high tumoral fraction (e.g. 0.25 and 0.5) will dominate the overall and advantage those tools that perform well uniquely at high tumoral fractions. To account for this bias, in the final metrics used to rank the tools we have decided to compute the RMSE separately at each observed tumoral fraction within each combination, then min-max scale it across deconvolution tools and aggregate the individual min-max scaled RMSE at each tumoral fraction using the mean to get a unique RMSE per combination. However, here we want to see how the metrics change across the different combinations, so we need to visualize the raw RMSE. For this reason, we will plot 2 separate heatmaps: 1 heatmap summarizing the raw AUC-ROC value and SCC across the different tumor types and sequencing depths; and 1 heatmap summarizing the raw RMSE across the different tumor types, sequencing depths and expected tumor fractions.
+As a first step in the analysis, we think that a comprehensive heatamap of all possible combinations might be useful. We will first compute the RMSE, AUC-ROC value and SCC values. Here, we will plot 2 separate heatmaps: 1 heatmap summarizing the raw AUC-ROC value and SCC across the different tumor types and sequencing depths; and 1 heatmap summarizing the raw RMSE across the different tumor types, sequencing depths and expected tumor fractions.
 
 ```{r}
 rmse_raw <- bench.res %>%
@@ -152,11 +152,11 @@ df.metrics <- scc_raw %>%
   left_join(auc_raw)
 ```
 
-### Plot the data of WGBS
+### Plot the data of WGBS-TT
 
 #### AUC-ROC and SCC
 
-We are now ready to plot an comprehensive heatmap of the WGBS dataset describing all the different combinations. We will first subset the metrics dataframe and retain only the tumor samples belonging to the WGBS dataset.
+We are now ready to plot an comprehensive heatmap of the WGBS-TT dataset describing all the different combinations. We will first subset the metrics dataframe and retain only the tumor samples belonging to the WGBS dataset.
 
 ```{r}
 final_wgbs_df <- df.metrics %>% filter(tumor_type %in% c("LUAD","LUSC","BRCA","BLCA"))
@@ -289,7 +289,7 @@ dev.off()
 
 #### RMSE
 
-We are now ready to plot an comprehensive heatmap of the WGBS dataset describing all the different combinations for the RMSE metric, similarly to what we have done above with the addition of the expected fraction. We will first subset the metrics dataframe and retain only the tumor samples belonging to the WGBS dataset.
+We are now ready to plot an comprehensive heatmap of the WGBS-TT dataset describing all the different combinations for the RMSE metric, similarly to what we have done above with the addition of the expected fraction. We will first subset the metrics dataframe and retain only the tumor samples belonging to the WGBS dataset.
 
 ```{r}
 final_wgbs_rmse_df <- rmse_raw %>% filter(tumor_type %in% c("LUAD","LUSC","BRCA","BLCA"))
@@ -421,11 +421,11 @@ dev.off()
 ```
 
 
-### Plot the data of RRBS
+### Plot the data of RRBS-TT
 
 #### AUC-ROC and SCC
 
-Here we will follow the same steps as before, but for the RRBS dataset.
+Here we will follow the same steps as before, but for the RRBS-TT dataset.
 
 ```{r}
 final_rrbs_df <- df.metrics %>% filter(tumor_type %in% c("CRC","LC","PC"))
@@ -555,7 +555,7 @@ dev.off()
 
 #### RMSE
 
-We are now ready to plot an comprehensive heatmap of the RRBS dataset describing all the different combinations for the RMSE metric, similarly to what we have done in the WGBS dataset.
+We are now ready to plot an comprehensive heatmap of the RRBS-TT dataset describing all the different combinations for the RMSE metric, similarly to what we have done in the WGBS-TT dataset.
 
 ```{r}
 final_rrbs_rmse_df <- rmse_raw %>% filter(tumor_type %in% c("LC", "CRC", "PC"))
@@ -685,7 +685,7 @@ draw(Reduce(`+`, heatmaps))
 dev.off()
 ```
 
-### Plot the data of cfRRBS
+### Plot the data of RRBS-CL
 
 #### AUC-ROC and SCC
 
@@ -818,7 +818,7 @@ dev.off()
 
 #### RMSE
 
-We are now ready to plot an comprehensive heatmap of the RRBS dataset describing all the different combinations for the RMSE metric, similarly to what we have done in the WGBS dataset.
+We are now ready to plot an comprehensive heatmap of the RRBS-CL dataset describing all the different combinations for the RMSE metric.
 
 ```{r}
 final_cfrrbs_rmse_df <- rmse_raw %>% filter(tumor_type %in% c("NBL"))
@@ -937,7 +937,6 @@ heatmaps <- lapply(names(heatmap_data), function(name) {
 })
 draw(Reduce(`+`, heatmaps))
 ```
-
 
 
 ```{r}

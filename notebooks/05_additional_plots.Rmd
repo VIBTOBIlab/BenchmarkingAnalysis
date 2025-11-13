@@ -11,7 +11,7 @@ In this tutorial we will analyse the WGBS and RRBS and generate several differen
 
 ### Benchmarking metrics
 
-It is important to highlight that to evaluate the performance of the deconvolution tools we considered 3 different key metrics: the root-mean-squared error (RMSE), the area under the curve (AUC-ROC) and the Spearman's rank correlation coefficient (ρ {\displaystyle \rho }). To create an overall benchmarking score against which to compare the deconvolution tools, we min-max scaled the metrics and computed the mean of the three metrics to obtain the overall score for each combination. Since RMSE is computed on a proportion of all the samples (specifically, only the samples with tumoral fraction \> 0% --\> 0.87), it will be weighted by this percentage.
+It is important to highlight that to evaluate the performance of the deconvolution tools we considered 4 different key metrics: the root-mean-squared error (RMSE), the area under the curve (AUC-ROC), the limit of detection (LoD) and the Spearman's rank correlation coefficient (ρ {\displaystyle \rho }). To create an overall benchmarking score against which to compare the deconvolution tools, we min-max scaled the metrics and computed the mean of the three metrics to obtain the overall score for each combination. Since RMSE is computed on a proportion of all the samples (specifically, only the samples with tumoral fraction \> 0% --\> 0.87), it will be weighted by this percentage.
 
 ### Setting up the environment
 
@@ -78,10 +78,9 @@ bench.res <- bench.res %>%
   filter(!is.na(predicted_tf))
 ```
 
-
 ## Compute the metrics
 
-For more information about the metrics, please refer to the (first notebook)["01_heatmaps_all_combinationts.Rmd"]. First, compute the RMSE.
+For more information about the metrics, please refer to the [first notebook](01_heatmaps_all_combinations.Rmd). First, compute the RMSE.
 
 ```{r}
 rmse_minmax <- bench.res %>%
@@ -144,6 +143,17 @@ auc_minmax <- aucroc_data %>%
     summarize(AUC=mean(AUC),.groups = "drop")
 ```
 
+Now import the results of LoD computed in the [second notebook](02_limit_of_detection.Rmd)
+
+```{r}
+lod.stats <- read.csv("../resources/lod_allstats.csv", row.names = 1)
+lod.stats$lod <- as.numeric(lod.stats$lod)
+lod_stats <- lod.stats %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(LoD = mean(lod, na.rm=TRUE))
+```
+
+
 Finally, we compute the SCC.
 
 ```{r}
@@ -159,7 +169,8 @@ Now we can merge the metrics together into a unique dataframe and normalize them
 # Merge the dataset
 merged_metrics <- rmse_minmax %>%
   left_join(scc_minmax) %>%
-  left_join(auc_minmax)
+  left_join(auc_minmax) %>%
+  left_join(lod_stats)
 
 # Compute the number of zeros and non-zero observations
 num.zeros <- nrow(bench.res[bench.res$expected_tf==0,])
@@ -173,15 +184,15 @@ norm_merged_metrics <- merged_metrics %>%
   group_by(dmr_tool, seq_depth, tumor_type) %>%
   mutate(normSCC  = ( SCC - min(SCC)     ) / ( max(SCC)  - min(SCC)  ),
          normAUC  = ( AUC - min(AUC)     ) / ( max(AUC)  - min(AUC)  ),
-         normRMSE = ( (RMSE) - min(RMSE) ) / ( max(RMSE) - min(RMSE) ), 
-         Score    = normSCC + normAUC + ( num.nonzeros/tot)*normRMSE )
+         normRMSE = ( (RMSE) - min(RMSE) ) / ( max(RMSE) - min(RMSE) ),
+         normLoD = ( (LoD) - min(LoD) ) / ( max(LoD) - min(LoD) ),
+         Score    = normSCC + normAUC + normRMSE + normLoD)
 
 # Normalize the Score
 norm_merged_metrics <- norm_merged_metrics %>%
   group_by(dmr_tool, seq_depth, tumor_type) %>%
   mutate(normScore = ( Score - min(Score) ) / ( max(Score) - min(Score) ) )
 ```
-
 
 ## Plot the results using different visualizations
 
@@ -214,12 +225,14 @@ for (dataset in c("WGBS-TT", "RRBS-TT", "RRBS-CL")) {
                   AUC   = mean(normAUC)  ,
                   RMSE  = mean(normRMSE) ,
                   SCC   = mean(normSCC)  ,
+                  LoD   = mean(normLoD)  ,
                   .groups = "drop") %>%
         group_by(deconv_tool, dmr_tool) %>%
-        summarise(Score = mean(Score),
-                  AUC   = mean(AUC)  ,
-                  RMSE  = mean(RMSE) ,
-                  SCC   = mean(SCC)  ,
+        summarise(Score = mean(Score)   ,
+                  AUC   = mean(AUC)     ,
+                  RMSE  = mean(RMSE)    ,
+                  SCC   = mean(SCC)     ,
+                  LoD   = mean(LoD)     ,
                   .groups = "drop")
       
       for (metric in c("Score", "AUC", "SCC", "RMSE")) {
@@ -256,7 +269,6 @@ for (dataset in c("WGBS-TT", "RRBS-TT", "RRBS-CL")) {
       }
 }
 ```
-
 
 ### Plot ranking distribution per metric used
 
@@ -322,7 +334,9 @@ for (dataset in c("WGBS-TT", "RRBS-TT", "RRBS-CL")) {
         panel.background = element_rect(fill = "white", color = NA),
         plot.background = element_rect(fill = "white", color = NA),
         panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank()
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16)
       ) +
       scale_x_continuous(breaks = seq(1, max(rank_counts$Rank))) +
       ylab("")
@@ -335,12 +349,11 @@ for (dataset in c("WGBS-TT", "RRBS-TT", "RRBS-CL")) {
 }
 ```
 
-
 Plot min-max scaled metrics for the datasets combined
 
 ```{r}
 # Create a directory to save the plots (optional)
-output_dir <- "../plots/05_additional_plots/rankings_distributions/"
+output_dir <- "../plots/05_additional_plots/ranking_distributions/"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
       
 for (metric in c("Score", "AUC", "SCC", "RMSE")) {
@@ -385,7 +398,9 @@ for (metric in c("Score", "AUC", "SCC", "RMSE")) {
         panel.background = element_rect(fill = "white", color = NA),
         plot.background = element_rect(fill = "white", color = NA),
         panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank()
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14)
       ) +
       scale_x_continuous(breaks = seq(1, max(rank_counts$Rank))) +
       ylab("")
@@ -400,7 +415,7 @@ for (metric in c("Score", "AUC", "SCC", "RMSE")) {
 
 ### Plot ranking distribution of the LoD
 
-We can now plot the ranking distribution for the LoD as well. For more information on how we computed the LoDs of the tools, you can go over the (second notebook)[02_limit_of_detection.Rmd].
+We can now plot the ranking distribution for the LoD as well.
 
 ```{r}
 # Create a directory to save the plots (optional)
@@ -471,7 +486,6 @@ for (dataset in c("WGBS-TT", "RRBS-TT", "RRBS-CL")) {
 }
 ```
 
-
 ### Ranking dot plots for AUC-ROC score
 
 We can now rank the tools based on the AUC-ROC score. We will use the raw score in this case, since we don not want to include it in combined scores.
@@ -499,7 +513,7 @@ for (dataset in c("WGBS-TT", "RRBS-TT", "RRBS-CL")) {
           summarise(AUC = median(AUC))
   
   # Order the seq depths and assign the correct color palette
-  if (dataset == "WGBS-T") {
+  if (dataset == "WGBS-TT") {
     df$seq_depth <- factor(df$seq_depth, levels = c("62M", "183M", "310M", "620M"))
     option = "rocket" }
   else { 
@@ -536,11 +550,3 @@ for (dataset in c("WGBS-TT", "RRBS-TT", "RRBS-CL")) {
   ggsave(output_file, plot = p, width = 8, height = 6)
 }
 ```
-
-
-
-
-
-
-
-

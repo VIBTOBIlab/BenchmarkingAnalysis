@@ -130,7 +130,7 @@ row_order <- lod_median %>%
 
 ## Plot the results
 
-### Plot the results on WGBS
+### Plot the results on WGBS-TT
 
 We can now plot the results in an separate heatmap for each dataset. We will start with the WGBS dataset. To obtain a unique LoD per deconvolution tool at each sequencing depth, we take the median LoD across tumor types.
 
@@ -185,7 +185,10 @@ p <- Heatmap(mat_wgbs,
         row_names_gp = gpar(fontsize = 12),
         column_names_gp = gpar(fontsize = 12),
         column_names_rot = 0, 
-        column_names_centered = T)
+        column_names_centered = T,
+        cell_fun = function(j, i, x, y, width, height, fill) {
+          grid.text(sprintf("%.4f", mat_wgbs[i, j]), x, y, gp = gpar(fontsize = 8))}
+        )
 p
 ```
 
@@ -202,7 +205,7 @@ dev.off()
 ```
 
 
-### Plot the results on RRBS
+### Plot the results on RRBS-TT
 
 We will now plot the results for RRBS following the same approach as for WGBS.
 
@@ -257,7 +260,10 @@ p <- Heatmap(mat_rrbs,
         row_names_gp = gpar(fontsize = 12),
         column_names_gp = gpar(fontsize = 12),
         column_names_rot = 0, 
-        column_names_centered = T)
+        column_names_centered = T,
+        cell_fun = function(j, i, x, y, width, height, fill) {
+          grid.text(sprintf("%.4f", mat_rrbs[i, j]), x, y, gp = gpar(fontsize = 8))}
+        )
 p
 ```
 
@@ -327,7 +333,10 @@ p <- Heatmap(mat_cfrrbs,
         row_names_gp = gpar(fontsize = 12),
         column_names_gp = gpar(fontsize = 12),
         column_names_rot = 0, 
-        column_names_centered = T)
+        column_names_centered = T,
+        cell_fun = function(j, i, x, y, width, height, fill) {
+          grid.text(sprintf("%.4f", mat_cfrrbs[i, j]), x, y, gp = gpar(fontsize = 8))}
+        )
 p
 ```
 
@@ -343,7 +352,6 @@ dev.off()
 ```
 
 ### Plot the overall median LoD
-
 
 ```{r}
 # Build the matrix
@@ -370,7 +378,10 @@ p <- Heatmap(mat_overall,
         row_names_gp = gpar(fontsize = 12),
         column_names_gp = gpar(fontsize = 12),
         column_names_rot = 0, 
-        column_names_centered = T)
+        column_names_centered = T,
+        cell_fun = function(j, i, x, y, width, height, fill) {
+          grid.text(sprintf("%.4f", mat_overall[i, j]), x, y, gp = gpar(fontsize = 8))}
+        )
 p
 ```
 
@@ -380,7 +391,7 @@ output_dir <- "../plots/02_lod_heatmaps"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 # Save to PDF
-pdf(paste0(output_dir,"/heatmap_lod_median.pdf"), width = 5, height = 5)
+pdf(paste0(output_dir,"/heatmap_lod_median.pdf") , width = 3.5, height = 5)
 draw(p)
 dev.off()
 ```

@@ -165,6 +165,54 @@ output_file <- file.path(output_dir, paste0("AUC-ROC_WGBS-TT.svg"))
 ggsave(output_file, plot = p, width = 8, height = 6)
 ```
 
+We can now try to see how the reference-free methods perform at increasing sequencing depth
+
+```{r warning=FALSE}
+plot_auc_refree <- subset(auc_wgbs, auc_wgbs$deconv_tool %in% c("RefFreeCellMix","MeDeCom"))
+plot_auc_refree$seq_depth <- factor(plot_auc_refree$seq_depth, levels = c("62M","183M", "310M", "620M"))
+# Define comparisons
+my_comparisons <- list(
+  c("62M", "183M"),
+  c("183M", "310M"),
+  c("183M", "620M"),
+  c("310M", "620M")
+)
+# Plot
+p <- ggplot(data = plot_auc_refree, aes(
+    x = seq_depth, y = AUC, fill = seq_depth)
+  ) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~deconv_tool, ncol = 5) +
+  stat_compare_means(
+      method = "wilcox.test", comparisons = my_comparisons,
+      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
+      method.args = list(alternative="less"),
+      label.y = c(1, 1.05, 1.10, 1.15), size = 3
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major.y = element_line(color = "grey90"),
+          panel.grid.minor.y = element_line(color = "grey90")) +
+  labs(title = "WGBS-TT dataset",
+       x = "", y = "AUC") +
+  scale_y_continuous(
+    breaks = c(0.4, 0.6, 0.8, 1) # only show these breaks
+  ) +
+  scale_fill_manual(values = c("62M"="#FAEBDDFF","183M"="#F69C73FF","310M"="#A11A5BFF","620M"="#03051AFF")) +
+  coord_cartesian(ylim=c(0.6,1.25))
+p
+```
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/04_refree_vs_refbased"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+output_file <- file.path(output_dir, paste0("robustness_AUC_seqdepth_refree_WGBS.pdf"))
+ggsave(output_file, plot = p, width = 8, height = 6)
+```
+
 ### SCC
 
 Now, we compute the SCC. The SCC is computed for each combination pooling all the observed tumor fractions together to get a value for each combination. The SCC is then min-max scaled.
@@ -217,6 +265,54 @@ output_dir <- "../plots/04_refree_vs_refbased"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 output_file <- file.path(output_dir, paste0("SCC_WGBS-TT.svg"))
+ggsave(output_file, plot = p, width = 8, height = 6)
+```
+
+We can now try to see how the reference-free methods perform at increasing sequencing depth
+
+```{r warning=FALSE}
+plot_scc_refree <- subset(scc_wgbs, scc_wgbs$deconv_tool %in% c("RefFreeCellMix","MeDeCom"))
+plot_scc_refree$seq_depth <- factor(plot_scc_refree$seq_depth, levels = c("62M","183M", "310M", "620M"))
+# Define comparisons
+my_comparisons <- list(
+  c("62M", "183M"),
+  c("183M", "310M"),
+  c("183M", "620M"),
+  c("310M", "620M")
+)
+# Plot
+p <- ggplot(data = plot_scc_refree, aes(
+    x = seq_depth, y = SCC, fill = seq_depth)
+  ) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~deconv_tool, ncol = 5) +
+  stat_compare_means(
+      method = "wilcox.test", comparisons = my_comparisons,
+      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
+      method.args = list(alternative="less"),
+      label.y = c(1, 1.05, 1.10, 1.15), size = 3
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major.y = element_line(color = "grey90"),
+          panel.grid.minor.y = element_line(color = "grey90")) +
+  labs(title = "WGBS-TT dataset",
+       x = "", y = "SCC") +
+  scale_y_continuous(
+    breaks = c(0.4, 0.6, 0.8, 1) # only show these breaks
+  ) +
+  scale_fill_manual(values = c("62M"="#FAEBDDFF","183M"="#F69C73FF","310M"="#A11A5BFF","620M"="#03051AFF")) +
+  coord_cartesian(ylim=c(0.6,1.25))
+p
+```
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/04_refree_vs_refbased"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+output_file <- file.path(output_dir, paste0("robustness_SCC_seqdepth_refree_WGBS.pdf"))
 ggsave(output_file, plot = p, width = 8, height = 6)
 ```
 
@@ -281,7 +377,51 @@ output_file <- file.path(output_dir, paste0("RMSE_WGBS-TT.svg"))
 ggsave(output_file, plot = p, width = 8, height = 6)
 ```
 
+```{r warning=FALSE}
+plot_rmse_refree <- subset(rmse_wgbs, rmse_wgbs$deconv_tool %in% c("RefFreeCellMix","MeDeCom"))
+plot_rmse_refree$seq_depth <- factor(plot_rmse_refree$seq_depth, levels = c("62M","183M", "310M", "620M"))
+# Define comparisons
+my_comparisons <- list(
+  c("62M", "183M"),
+  c("183M", "310M"),
+  c("183M", "620M"),
+  c("310M", "620M")
+)
+# Plot
+p <- ggplot(data = plot_rmse_refree, aes(
+    x = seq_depth, y = RMSE, fill = seq_depth)
+  ) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~deconv_tool, ncol = 5) +
+  stat_compare_means(
+      method = "wilcox.test", comparisons = my_comparisons,
+      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
+      method.args = list(alternative="less"),
+      label.y = c(1, 1.05, 1.10, 1.15), size = 3
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major.y = element_line(color = "grey90"),
+          panel.grid.minor.y = element_line(color = "grey90")) +
+  labs(title = "WGBS-TT dataset",
+       x = "", y = "1-RMSE") +
+  scale_y_continuous(
+    breaks = c(0.4, 0.6, 0.8, 1) # only show these breaks
+  ) +
+  scale_fill_manual(values = c("62M"="#FAEBDDFF","183M"="#F69C73FF","310M"="#A11A5BFF","620M"="#03051AFF")) +
+  coord_cartesian(ylim=c(0.5,1.25))
+p
+```
 
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/04_refree_vs_refbased"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+output_file <- file.path(output_dir, paste0("robustness_RMSE_seqdepth_refree_WGBS.pdf"))
+ggsave(output_file, plot = p, width = 8, height = 6)
+```
 
 ### LoD
 
@@ -359,22 +499,6 @@ for (type in unique(in_silico_refree_wgbs$tumor_type)) {
           filter(as.numeric(p.adj) < 0.01) %>%
           slice(1) %>%
           pull(group2)
-        
-        # p <- filt_df %>%
-        #   group_by(deconv_tool) %>%
-        #   ggplot(aes(x = as.factor(expected_tf), y = predicted_tf)) +
-        #   geom_boxplot() +
-        #   labs(
-        #     title = paste("LoD | Tool:", deconv,"| DMR tool:", dmrtool,"| Depth:",seqdepth, "| Tumor:",type),
-        #     x = "",
-        #     y = "Estimated tumoral fraction (%)"
-        #   ) +
-        #   theme_classic() +
-        #   theme(
-        #     axis.text.x = element_text(angle = 45, hjust = 1),
-        #     panel.grid.major.y = element_line(color = "grey90", linewidth = 0.5)  # add horizontal grid
-        #   ) + 
-        #   stat_pvalue_manual(stats, label = "star", xmin = "group1", xmax = "group2", y.position = "y.position")
             
         # If lod is empty or NA, assign 1
         if (length(lod) == 0 || is.na(lod)) {
@@ -443,7 +567,6 @@ if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 output_file <- file.path(output_dir, paste0("LoD_WGBS-TT.svg"))
 ggsave(output_file, plot = p, width = 8, height = 6)
 ```
-
 
 ## RRBS-TT
 
@@ -542,6 +665,56 @@ output_file <- file.path(output_dir, paste0("AUC-ROC_RRBS-TT.svg"))
 ggsave(output_file, plot = p, width = 8, height = 6)
 ```
 
+And we can now check the influence of sequencing depth on AUC
+
+```{r warning=FALSE}
+plot_auc_refree <- subset(auc_rrbs, auc_rrbs$deconv_tool %in% c("RefFreeCellMix","MeDeCom"))
+plot_auc_refree$seq_depth <- factor(plot_auc_refree$seq_depth, levels = c("2M", "5M", "10M", "15M", "20M"))
+
+# Define comparisons
+my_comparisons <- list(
+  c("2M", "5M"),
+  c("5M", "10M"),
+  c("10M","15M"),
+  c("10M", "20M"),
+  c("15M", "20M")
+)
+# Plot
+p <- ggplot(data = plot_auc_refree, aes(
+    x = seq_depth, y = AUC, fill = seq_depth)
+  ) +
+  #geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~deconv_tool, ncol = 5) +
+  stat_compare_means(
+      method = "wilcox.test", comparisons = my_comparisons,
+      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
+      method.args = list(alternative="less"),
+      label.y = c(0.95, 0.98, 1, 1.05,1.1), size = 3
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major.y = element_line(color = "grey90"),
+          panel.grid.minor.y = element_line(color = "grey90")) +
+  labs(title = "RRBS-TT dataset",
+       x = "", y = "AUC") +
+  scale_y_continuous(
+    breaks = c(0.8, 0.9, 1) # only show these breaks
+  ) +
+  scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF"))  +
+  coord_cartesian(ylim=c(0.8,1.15))
+p
+```
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/04_refree_vs_refbased"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+output_file <- file.path(output_dir, paste0("robustness_AUC_seqdepth_refree_RRBS.pdf"))
+ggsave(output_file, plot = p, width = 8, height = 6)
+```
+
 ### SCC
 
 Now, we compute the SCC.
@@ -594,6 +767,57 @@ output_dir <- "../plots/04_refree_vs_refbased"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 output_file <- file.path(output_dir, paste0("SCC_RRBS-TT.svg"))
+ggsave(output_file, plot = p, width = 8, height = 6)
+```
+
+We can now try to see how the reference-free methods perform at increasing sequencing depth
+
+```{r warning=FALSE}
+plot_scc_refree <- subset(scc_rrbs, scc_rrbs$deconv_tool %in% c("RefFreeCellMix","MeDeCom"))
+plot_scc_refree$seq_depth <- factor(plot_scc_refree$seq_depth, levels = c("2M", "5M", "10M", "15M", "20M"))
+
+# Define comparisons
+my_comparisons <- list(
+  c("2M", "5M"),
+  c("5M", "10M"),
+  c("10M","15M"),
+  c("10M", "20M"),
+  c("15M", "20M")
+)
+# Plot
+p <- ggplot(data = plot_scc_refree, aes(
+    x = seq_depth, y = SCC, fill = seq_depth)
+  ) +
+  #geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~deconv_tool, ncol = 5) +
+  stat_compare_means(
+      method = "wilcox.test", comparisons = my_comparisons,
+      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
+      method.args = list(alternative="less"),
+      label.y = c(1, 1.02, 1.04, 1.06, 1.08), size = 3
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major.y = element_line(color = "grey90"),
+          panel.grid.minor.y = element_line(color = "grey90")) +
+  labs(title = "RRBS-TT dataset",
+       x = "", y = "SCC") +
+  scale_y_continuous(
+    breaks = c(0.9, 1) # only show these breaks
+  ) +
+  scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF"))  +
+  coord_cartesian(ylim=c(0.85,1.1))
+p
+```
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/04_refree_vs_refbased"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+output_file <- file.path(output_dir, paste0("robustness_SCC_seqdepth_refree_RRBS.pdf"))
 ggsave(output_file, plot = p, width = 8, height = 6)
 ```
 
@@ -655,6 +879,57 @@ output_dir <- "../plots/04_refree_vs_refbased"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 output_file <- file.path(output_dir, paste0("RMSE_RRBS-TT.svg"))
+ggsave(output_file, plot = p, width = 8, height = 6)
+```
+
+We can now try to see how the reference-free methods perform at increasing sequencing depth
+
+```{r warning=FALSE}
+plot_rmse_refree <- subset(rmse_rrbs, rmse_rrbs$deconv_tool %in% c("RefFreeCellMix","MeDeCom"))
+plot_rmse_refree$seq_depth <- factor(plot_rmse_refree$seq_depth, levels = c("2M", "5M", "10M", "15M", "20M"))
+
+# Define comparisons
+my_comparisons <- list(
+  c("2M", "5M"),
+  c("5M", "10M"),
+  c("10M","15M"),
+  c("10M", "20M"),
+  c("15M", "20M")
+)
+# Plot
+p <- ggplot(data = plot_rmse_refree, aes(
+    x = seq_depth, y = RMSE, fill = seq_depth)
+  ) +
+  #geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~deconv_tool, ncol = 5) +
+  stat_compare_means(
+      method = "wilcox.test", comparisons = my_comparisons,
+      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
+      method.args = list(alternative="less"),
+      label.y = c(1, 1.02, 1.04, 1.08, 1.13), size = 3
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major.y = element_line(color = "grey90"),
+          panel.grid.minor.y = element_line(color = "grey90")) +
+  labs(title = "RRBS-TT dataset",
+       x = "", y = "1-RMSE") +
+  scale_y_continuous(
+    breaks = c(0.4, 0.6, 0.8, 1) # only show these breaks
+  ) +
+  scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF"))  +
+  coord_cartesian(ylim=c(0.4,1.15))
+p
+```
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/04_refree_vs_refbased"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+output_file <- file.path(output_dir, paste0("robustness_RMSE_seqdepth_refree_RRBS.pdf"))
 ggsave(output_file, plot = p, width = 8, height = 6)
 ```
 
@@ -868,6 +1143,57 @@ output_file <- file.path(output_dir, paste0("AUC-ROC_RRBS-CL.svg"))
 ggsave(output_file, plot = p, width = 8, height = 6)
 ```
 
+We can now try to see how the reference-free methods perform at increasing sequencing depth
+
+```{r warning=FALSE}
+plot_scc_refree <- subset(auc_cfrrbs, auc_cfrrbs$deconv_tool %in% c("RefFreeCellMix","MeDeCom"))
+plot_scc_refree$seq_depth <- factor(plot_scc_refree$seq_depth, levels = c("2M", "5M", "10M", "15M", "20M"))
+
+# Define comparisons
+my_comparisons <- list(
+  c("2M", "5M"),
+  c("5M", "10M"),
+  c("10M","15M"),
+  c("10M", "20M"),
+  c("15M", "20M")
+)
+# Plot
+p <- ggplot(data = plot_scc_refree, aes(
+    x = seq_depth, y = AUC, fill = seq_depth)
+  ) +
+  #geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~deconv_tool, ncol = 5) +
+  stat_compare_means(
+      method = "wilcox.test", comparisons = my_comparisons,
+      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
+      method.args = list(alternative="less"),
+      label.y = c(0.97, 1, 1.02, 1.04, 1.06), size = 3
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major.y = element_line(color = "grey90"),
+          panel.grid.minor.y = element_line(color = "grey90")) +
+  labs(title = "RRBS-CL dataset",
+       x = "", y = "AUC") +
+  scale_y_continuous(
+    breaks = c(0.9, 1) # only show these breaks
+  ) +
+  scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF"))  +
+  coord_cartesian(ylim=c(0.9,1.1))
+p
+```
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/04_refree_vs_refbased"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+output_file <- file.path(output_dir, paste0("robustness_AUC_seqdepth_refree_cfRRBS.pdf"))
+ggsave(output_file, plot = p, width = 8, height = 6)
+```
+
 ### SCC
 
 Now, we compute the SCC.
@@ -920,6 +1246,57 @@ output_dir <- "../plots/04_refree_vs_refbased"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 output_file <- file.path(output_dir, paste0("SCC_RRBS-CL.svg"))
+ggsave(output_file, plot = p, width = 8, height = 6)
+```
+
+We can now try to see how the reference-free methods perform at increasing sequencing depth
+
+```{r warning=FALSE}
+plot_scc_refree <- subset(scc_cfrrbs, scc_cfrrbs$deconv_tool %in% c("RefFreeCellMix","MeDeCom"))
+plot_scc_refree$seq_depth <- factor(plot_scc_refree$seq_depth, levels = c("2M", "5M", "10M", "15M", "20M"))
+
+# Define comparisons
+my_comparisons <- list(
+  c("2M", "5M"),
+  c("5M", "10M"),
+  c("10M","15M"),
+  c("10M", "20M"),
+  c("15M", "20M")
+)
+# Plot
+p <- ggplot(data = plot_scc_refree, aes(
+    x = seq_depth, y = SCC, fill = seq_depth)
+  ) +
+  #geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~deconv_tool, ncol = 5) +
+  stat_compare_means(
+      method = "wilcox.test", comparisons = my_comparisons,
+      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
+      method.args = list(alternative="less"),
+      label.y = c(1, 1.02, 1.04, 1.06, 1.08), size = 3
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major.y = element_line(color = "grey90"),
+          panel.grid.minor.y = element_line(color = "grey90")) +
+  labs(title = "RRBS-CL dataset",
+       x = "", y = "SCC") +
+  scale_y_continuous(
+    breaks = c(0.9, 1) # only show these breaks
+  ) +
+  scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF"))  +
+  coord_cartesian(ylim=c(0.9,1.1))
+p
+```
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/04_refree_vs_refbased"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+output_file <- file.path(output_dir, paste0("robustness_SCC_seqdepth_refree_cfRRBS.pdf"))
 ggsave(output_file, plot = p, width = 8, height = 6)
 ```
 
@@ -981,6 +1358,57 @@ output_dir <- "../plots/04_refree_vs_refbased"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
 output_file <- file.path(output_dir, paste0("RMSE_RRBS-CL.svg"))
+ggsave(output_file, plot = p, width = 8, height = 6)
+```
+
+We can now try to see how the reference-free methods perform at increasing sequencing depth
+
+```{r warning=FALSE}
+plot_rmse_refree <- subset(rmse_cfrrbs, rmse_cfrrbs$deconv_tool %in% c("RefFreeCellMix","MeDeCom"))
+plot_rmse_refree$seq_depth <- factor(plot_rmse_refree$seq_depth, levels = c("2M", "5M", "10M", "15M", "20M"))
+
+# Define comparisons
+my_comparisons <- list(
+  c("2M", "5M"),
+  c("5M", "10M"),
+  c("10M","15M"),
+  c("10M", "20M"),
+  c("15M", "20M")
+)
+# Plot
+p <- ggplot(data = plot_rmse_refree, aes(
+    x = seq_depth, y = RMSE, fill = seq_depth)
+  ) +
+  #geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~deconv_tool, ncol = 5) +
+  stat_compare_means(
+      method = "wilcox.test", comparisons = my_comparisons,
+      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
+      method.args = list(alternative="less"),
+      label.y = c(1, 1.05, 1.10, 1.15, 1.20), size = 3
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major.y = element_line(color = "grey90"),
+          panel.grid.minor.y = element_line(color = "grey90")) +
+  labs(title = "RRBS-CL dataset",
+       x = "", y = "1-RMSE") +
+  scale_y_continuous(
+    breaks = c(0.6, 0.8, 1) # only show these breaks
+  ) +
+  scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF"))  +
+  coord_cartesian(ylim=c(0.6,1.25))
+p
+```
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/04_refree_vs_refbased"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+output_file <- file.path(output_dir, paste0("robustness_RMSE_seqdepth_refree_cfRRBS.pdf"))
 ggsave(output_file, plot = p, width = 8, height = 6)
 ```
 

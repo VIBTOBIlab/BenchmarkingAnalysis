@@ -11,7 +11,7 @@ In this tutorial we will plot the funkyheatmap published in the paper, where we 
 
 ### Benchmarking metrics
 
-It is important to highlight that to evaluate the performance of the deconvolution tools we considered 3 different key metrics: the root-mean-squared error (RMSE), the area under the curve (AUC-ROC) and the Spearman's rank correlation coefficient (ρ {\displaystyle \rho }). To create an overall benchmarking score against which to compare the deconvolution tools, we min-max scaled the metrics and computed the mean of the three metrics to obtain the overall score for each combination. Since RMSE is computed on a proportion of all the samples (specifically, only the samples with tumoral fraction \> 0% --\> 0.87), it will be weighted by this percentage.
+It is important to highlight that to evaluate the performance of the deconvolution tools we considered 4 different key metrics: the root-mean-squared error (RMSE), the area under the curve (AUC-ROC), the limit of detection (LoD) and the Spearman's rank correlation coefficient (ρ {\displaystyle \rho }). To create an overall benchmarking score against which to compare the deconvolution tools, we min-max scaled the metrics and computed the mean of the three metrics to obtain the overall score for each combination. Since RMSE is computed on a proportion of all the samples (specifically, only the samples with tumoral fraction \> 0% --\> 0.87), it will be weighted by this percentage.
 
 ### Setting up the environment
 
@@ -431,9 +431,9 @@ score_rrbs <- score_rrbs %>%
   summarise(Score = Score_minmax, .groups = "drop")
 ```
 
-### RRBS-CL in silico
+### RRBS-CL
 
-And for the cfRRBS in silico and in vitro
+And for the RRBS-CL dataset
 
 ```{r}
 # Create a new dataset dataframe where to store AUC-ROC results
@@ -867,7 +867,8 @@ scalability_time <- data.frame(
 # Concatanate the datasets and make a mean score
 aggr_scalab_score = merge(scalability_memory, scalability_time, by = "deconv_tool")
 aggr_scalab_score$Score = (aggr_scalab_score$Memory + aggr_scalab_score$Time) / 2
-aggr_scalab_score <- aggr_scalab_score[, c("deconv_tool","Score")]
+funky_scalab_score <- aggr_scalab_score[, c("deconv_tool","Score")]
+colnames(funky_scalab_score)[2] <- "Scalability_Score"
 ```
 
 ## Compute overall score
@@ -891,9 +892,9 @@ overall_cfrrbs_score <- score_cfrrbs %>%
   summarise(Score = mean(Score))
 
 # Assign scores
-overall_wgbs_score$weight <- 0.5
-overall_rrbs_score$weight <- 0.25
-overall_cfrrbs_score$weight <- 0.25
+overall_wgbs_score$weight <- 0.45
+overall_rrbs_score$weight <- 0.225
+overall_cfrrbs_score$weight <- 0.225
 aggr_scalab_score$weight <- 0.1
 ```
 
@@ -933,6 +934,7 @@ data_funkyheat <- inner_join(funkyheat_permetric_auc, funkyheat_permetric_rmse, 
   inner_join(funkyheat_perdataset_perseqdepth_score, by = "deconv_tool") %>%
   inner_join(average_memory, by = "deconv_tool") %>%
   inner_join(average_runtime, by = "deconv_tool") %>%
+  #inner_join(funky_scalab_score[,1:2], by = "deconv_tool") %>%
   inner_join(overall_score, by = "deconv_tool")
 
 # Add the python/R logos depending on the tool
@@ -960,7 +962,7 @@ palettes <- tribble(
   "stability", grDevices::colorRampPalette(rev(RColorBrewer::brewer.pal(9, "YlOrBr")[-7:-9]))(101),
   "qc", grDevices::colorRampPalette(rev(RColorBrewer::brewer.pal(9, "Greens")[-1] %>% c("#00250f")))(101),
   "white6black4", c(rep("white", 3), rep("black", 7)),
-  # "column_annotation", c(overall = "#555555", benchmark = "#4292c6", scaling = "#f6483a", stability = "#fe9929", qc = "#41ab5d")
+  #"column_annotation", c(overall = "#555555", benchmark = "#4292c6", scaling = "#f6483a", stability = "#fe9929", qc = "#41ab5d")
 )
 ```
 
@@ -972,10 +974,10 @@ column_info <- tribble(
   "deconv_tool",        "Method",             "",                     "text",       "overall",   lst(hjust = 0, width = 6),
   "Reference",          "Method",             "Reference",            "text",       "overall",   lst(width = 2),
   "Availability",       "Method",             "Availability",         "image",      "overall",   lst(width = 1.5),
-  "RMSE",               "Summary",            "1-RMSE",               "bar",        "benchmark",        lst(),
-  "SCC",                "Summary",            "SCC",                  "bar",        "benchmark",        lst(),
-  "AUC",                "Summary",            "AUC",                  "bar",        "benchmark",        lst(),
-  "LoD",                "Summary",            "LoD",                  "bar",        "benchmark",        lst(),
+  "RMSE",               "Summary",            "1-RMSE",               "funkyrect",        "benchmark",        lst(),
+  "SCC",                "Summary",            "SCC",                  "funkyrect",        "benchmark",        lst(),
+  "AUC",                "Summary",            "AUC",                  "funkyrect",        "benchmark",        lst(),
+  "LoD",                "Summary",            "LoD",                  "funkyrect",        "benchmark",        lst(),
   "WGBS_TT",            "Per dataset",             "WGBS-TT",              "funkyrect",  "benchmark", lst(),
   "RRBS_TT",            "Per dataset",             "RRBS-TT",              "funkyrect",  "benchmark", lst(),
   "RRBS_CL",            "Per dataset",             "RRBS-CL",              "funkyrect",  "benchmark", lst(),
@@ -997,6 +999,7 @@ column_info <- tribble(
   "Memory",             "Scalability",        "Memory (MB)",          "text",       "black",     lst(overlay = TRUE),
   "Runtime",            "Scalability",        "Runtime (sec)",        "rect",       "scaling",   lst(width = 1.7),
   "Runtime",            "Scalability",        "Runtime (sec)",        "text",       "black",     lst(overlay = TRUE),
+  #"Scalability_Score",  "Scalability",        "Scalability score",    "funkyrect",       "scaling",    lst(),
   "Overall_Score",      "Final Ranking",      "Overall score",        "bar",        "stability", lst(width = 2.4),
   "Rank",               "Final Ranking",      "Ranking",              "text",       "stability", lst(width = 1.8),
 )
@@ -1032,7 +1035,7 @@ And save it in the correct location in svg format for a better visualization.
 output_dir <- "../plots/06_funkyheatmap"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 
-output_file <- file.path(output_dir, paste0("funkyheatmap.withrefree_unscaled.svg"))
+output_file <- file.path(output_dir, paste0("funkyheatmap.withrefree_unscaled.v2.svg"))
 ggsave(output_file, g, width = g$width, height = g$height)
 ```
 

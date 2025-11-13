@@ -23,6 +23,7 @@ Import the necessary libraries for the analysis
 ```{r message=FALSE, warning=FALSE}
 library(ggpubr)
 library(dplyr)
+library(ComplexHeatmap)
 library(ggplot2)
 library(tidyverse)
 library(tidytext)
@@ -211,9 +212,157 @@ output_file <- file.path(output_dir, paste0("preciseness_SCC_WGBS_dataset_boxplo
 ggsave(output_file, plot = p1, width = 8, height = 4)
 ```
 
+#### Boxplots of SCC and RMSE at different sequencing depths with stat tests
+
+We can now check how the sequencing depth influences the SCC
+
+```{r warning=FALSE}
+scc_raw_wgbs$seq_depth <- factor(scc_raw_wgbs$seq_depth, levels = c("62M","183M", "310M", "620M"))
+# Define comparisons
+my_comparisons <- list(
+  c("62M", "183M"),
+  c("183M", "310M"),
+  c("183M", "620M"),
+  c("310M", "620M")
+)
+# Plot
+p1 <- ggplot(data = scc_raw_wgbs, aes(
+    x = seq_depth, y = SCC, fill = seq_depth)
+  ) +
+  #geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~deconv_tool, ncol = 5) +
+  stat_compare_means(
+      method = "wilcox.test", comparisons = my_comparisons,
+      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
+      method.args = list(alternative="less"),
+      label.y = c(1, 1.10, 1.20, 1.30), size = 3
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major.y = element_line(color = "grey90"),
+          panel.grid.minor.y = element_line(color = "grey90")) +
+  labs(title = "WGBS-TT dataset",
+       x = "", y = "SCC") +
+  scale_y_continuous(
+    breaks = c(0.4, 0.6, 0.8, 1) # only show these breaks
+  ) +
+  labs(title = "WGBS-TT dataset",
+       x = "", y = "SCC") +
+  scale_fill_manual(values = c("62M"="#FAEBDDFF","183M"="#F69C73FF","310M"="#A11A5BFF","620M"="#03051AFF")) +
+  coord_cartesian(ylim=c(0.3,1.45))
+p1
+```
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- "../plots/08_preciseness"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Save the plot as an image
+output_file <- file.path(output_dir, paste0("preciseness_SCC_vs_seqdepth_WGBS_dataset_boxplots.pdf"))
+ggsave(output_file, plot = p1, width = 8, height = 4)
+```
+
+And do the same for the 1-RMSE
+
+```{r warning=FALSE}
+rmse_raw_wgbs$seq_depth <- factor(rmse_raw_wgbs$seq_depth, levels = c("62M","183M", "310M", "620M"))
+# Define comparisons
+my_comparisons <- list(
+  c("62M", "183M"),
+  c("183M", "310M"),
+  c("183M", "620M"),
+  c("310M", "620M")
+)
+# Plot
+p1 <- ggplot(data = rmse_raw_wgbs, aes(
+    x = seq_depth, y = `1-RMSE`, fill = seq_depth)
+  ) +
+  #geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~deconv_tool, ncol = 5) +
+  stat_compare_means(
+      method = "wilcox.test", comparisons = my_comparisons,
+      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
+      method.args = list(alternative="less"),
+      label.y = c(1, 1.10, 1.20, 1.30), size = 3
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major.y = element_line(color = "grey90"),
+          panel.grid.minor.y = element_line(color = "grey90")) +
+  labs(title = "WGBS-TT dataset",
+       x = "", y = "1-RMSE") +
+  scale_y_continuous(
+    breaks = c(0.6, 0.8, 1) # only show these breaks
+  ) +
+  labs(title = "WGBS-TT dataset",
+       x = "", y = "1-RMSE") +
+  scale_fill_manual(values = c("62M"="#FAEBDDFF","183M"="#F69C73FF","310M"="#A11A5BFF","620M"="#03051AFF")) +
+  coord_cartesian(ylim=c(0.6,1.4))
+p1
+```
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- "../plots/08_preciseness"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Save the plot as an image
+output_file <- file.path(output_dir, paste0("preciseness_RMSE_vs_seqdepth_WGBS_dataset_boxplots.pdf"))
+ggsave(output_file, plot = p1, width = 8, height = 4)
+```
+
+Finally we can plot an heatmap of the median 1-RMSE at each sequencing depth to show the actual values
+
+```{r}
+table_rmse_seqdepth <- rmse_raw_wgbs %>%
+  group_by(deconv_tool, seq_depth) %>%
+  summarise(`1-RMSE` = median(`1-RMSE`)) %>%
+  pivot_wider(
+    names_from = seq_depth,
+    values_from = `1-RMSE`
+  )
+mat <- column_to_rownames(table_rmse_seqdepth, var = "deconv_tool")
+
+# Plot
+p1 <- Heatmap(mat,
+        name = "1-RMSE",
+        #col = col_fun,
+        cluster_rows = T,
+        show_row_dend = F,
+        cluster_columns = FALSE,
+        column_names_side = "top",
+        row_names_gp = gpar(fontsize = 10),
+        column_names_gp = gpar(fontsize = 12),
+        column_names_centered = T,
+        column_names_rot = 0,
+        cell_fun = function(j, i, x, y, width, height, fill) {
+          grid.text(sprintf("%.4f", mat[i, j]), x, y,
+                    gp = gpar(fontsize = 10, col = "black"))
+        },
+        heatmap_legend_param = list(title = "1-RMSE"))
+p1
+```
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- "../plots/08_preciseness"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Save the plot as an image
+output_file <- file.path(output_dir, paste0("preciseness_RMSE_vs_seqdepth_WGBS_dataset_heatmap.pdf"))
+pdf(output_file, width = 8, height = 6)
+draw(p1)
+dev.off()
+```
+
 ## Analyse RRBS-TT dataset
 
-And now we analyze the RRBS in silico mixtures 
+And now we analyze the RRBS-TT dataset
 
 ```{r}
 bench_rrbs <- subset(bench.res,bench.res$seq_method=="rrbs")
@@ -236,7 +385,6 @@ scc_raw_rrbs <- bench_rrbs %>%
   summarise(SCC = cor(expected_tf, predicted_tf, method = "spearman"), .groups = "drop")
 ```
 
-
 We can now combine the RMSE and SCC metrics into a unique dataframe
 
 ```{r}
@@ -244,8 +392,7 @@ df.rrbs.metrics <- scc_raw_rrbs %>%
   left_join(rmse_raw_rrbs)
 ```
 
-
-### Plot the data of RRBS
+### Plot the data of RRBS-TT
 
 #### Boxplots of RMSE
 
@@ -359,6 +506,155 @@ output_file <- file.path(output_dir, paste0("preciseness_SCC_RRBS_dataset_boxplo
 ggsave(output_file, plot = p1, width = 8, height = 4)
 ```
 
+#### Boxplots of SCC and RMSE at different sequencing depths with stat tests
+
+We can now check how the sequencing depth influences the SCC
+
+```{r warning=FALSE}
+scc_raw_rrbs$seq_depth <- factor(scc_raw_rrbs$seq_depth, levels = c("2M", "5M", "10M", "15M", "20M"))
+
+# Define comparisons
+my_comparisons <- list(
+  c("2M", "5M"),
+  c("5M", "10M"),
+  c("10M","15M"),
+  c("10M", "20M"),
+  c("15M", "20M")
+)
+# Plot
+p1 <- ggplot(data = scc_raw_rrbs, aes(
+    x = seq_depth, y = SCC, fill = seq_depth)
+  ) +
+  #geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~deconv_tool, ncol = 5) +
+  stat_compare_means(
+      method = "wilcox.test", comparisons = my_comparisons,
+      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
+      method.args = list(alternative="less"),
+      label.y = c(1, 1.10, 1.20, 1.30), size = 3
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major.y = element_line(color = "grey90"),
+          panel.grid.minor.y = element_line(color = "grey90")) +
+  labs(title = "RRBS-TT dataset",
+       x = "", y = "SCC") +
+  scale_y_continuous(
+    breaks = c(0.4, 0.6, 0.8, 1) # only show these breaks
+  ) +
+  scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF"))  +
+  ylim(0.3,1.45)
+p1
+```
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- "../plots/08_preciseness"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Save the plot as an image
+output_file <- file.path(output_dir, paste0("preciseness_SCC_vs_seqdepth_RRBS_dataset_boxplots.pdf"))
+ggsave(output_file, plot = p1, width = 8, height = 4)
+```
+
+And do the same for 1-RMSE
+
+```{r warning=FALSE}
+rmse_raw_rrbs$seq_depth <- factor(rmse_raw_rrbs$seq_depth, levels = c("2M", "5M", "10M", "15M", "20M"))
+
+# Define comparisons
+my_comparisons <- list(
+  c("2M", "5M"),
+  c("5M", "10M"),
+  c("10M","15M"),
+  c("10M", "20M"),
+  c("15M", "20M")
+)
+
+# Plot
+p1 <- ggplot(data = rmse_raw_rrbs, aes(
+    x = seq_depth, y = `1-RMSE`, fill = seq_depth)
+  ) +
+  #geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~deconv_tool, ncol = 5) +
+  stat_compare_means(
+      method = "wilcox.test", comparisons = my_comparisons,
+      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
+      method.args = list(alternative="less"),
+      label.y = c(1, 1.10, 1.20, 1.30), size = 3
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major.y = element_line(color = "grey90"),
+          panel.grid.minor.y = element_line(color = "grey90")) +
+  labs(title = "RRBS-TT dataset",
+       x = "", y = "1-RMSE") +
+  scale_y_continuous(
+    breaks = c(0.4, 0.6, 0.8, 1) # only show these breaks
+  ) +
+  scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF"))  +
+  coord_cartesian(ylim=c(0.3,1.37))
+p1
+```
+
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- "../plots/08_preciseness"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Save the plot as an image
+output_file <- file.path(output_dir, paste0("preciseness_RMSE_vs_seqdepth_RRBS_dataset_boxplots.pdf"))
+ggsave(output_file, plot = p1, width = 8, height = 4)
+```
+
+Finally we can plot an heatmap of the median 1-RMSE at each sequencing depth to show the actual values
+
+```{r}
+table_rmse_seqdepth <- rmse_raw_rrbs %>%
+  group_by(deconv_tool, seq_depth) %>%
+  summarise(`1-RMSE` = median(`1-RMSE`)) %>%
+  pivot_wider(
+    names_from = seq_depth,
+    values_from = `1-RMSE`
+  )
+mat <- column_to_rownames(table_rmse_seqdepth, var = "deconv_tool")
+
+# Plot
+p1 <- Heatmap(mat,
+        name = "1-RMSE",
+        #col = col_fun,
+        cluster_rows = T,
+        show_row_dend = F,
+        cluster_columns = FALSE,
+        column_names_side = "top",
+        row_names_gp = gpar(fontsize = 10),
+        column_names_gp = gpar(fontsize = 12),
+        column_names_centered = T,
+        column_names_rot = 0,
+        cell_fun = function(j, i, x, y, width, height, fill) {
+          grid.text(sprintf("%.4f", mat[i, j]), x, y,
+                    gp = gpar(fontsize = 10, col = "black"))
+        },
+        heatmap_legend_param = list(title = "1-RMSE"))
+p1
+```
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- "../plots/08_preciseness"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Save the plot as an image
+output_file <- file.path(output_dir, paste0("preciseness_RMSE_vs_seqdepth_RRBS_dataset_heatmap.pdf"))
+pdf(output_file, width = 8, height = 6)
+draw(p1)
+dev.off()
+```
 
 ## Analyse RRBS-CL dataset
 
@@ -393,8 +689,7 @@ df.cfrrbs.metrics <- scc_raw_cfrrbs %>%
   left_join(rmse_raw_cfrrbs)
 ```
 
-
-### Plot the data of RRBS
+### Plot the data of RRBS-CL
 
 #### Boxplots of RMSE
 
@@ -436,9 +731,9 @@ p1 <- ggplot(data = rmse_raw_cfrrbs, aes(
     x = reorder_within(deconv_tool,-`1-RMSE`, fraction_class, median), 
     y = `1-RMSE`, fill = deconv_tool)
   ) +
-  geom_jitter(size=1, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_jitter(size=1, alpha=0.8, width = 0.3, aes(color = deconv_tool), show.legend = F) +
   geom_boxplot(outliers = FALSE, alpha = 0.8) +
-  facet_wrap(~fraction_class, scales = "free_x") +
+  facet_wrap(~fraction_class, axes = "all", scales = "free_x") +
   theme_classic() +
   theme(
     axis.text.x = element_text(angle = 45, hjust = 1),
@@ -464,7 +759,6 @@ output_file <- file.path(output_dir, paste0("preciseness_cfRRBS_dataset_boxplots
 ggsave(output_file, plot = p1, width = 8, height = 4)
 ```
 
-
 #### Boxplots of SCC
 
 ```{r}
@@ -477,7 +771,6 @@ median_scc <- scc_raw_cfrrbs %>%
 
 scc_raw_cfrrbs$deconv_tool <- factor(scc_raw_cfrrbs$deconv_tool, levels = median_scc)
 ```
-
 
 ```{r}
 # Plot
@@ -506,6 +799,155 @@ if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 # Save the plot as an image
 output_file <- file.path(output_dir, paste0("preciseness_SCC_cfRRBS_dataset_boxplots.svg"))
 ggsave(output_file, plot = p1, width = 8, height = 4)
+```
+
+#### Boxplots of SCC and RMSE at different sequencing depths with stat tests
+
+We can now check how the sequencing depth influences the SCC
+
+```{r warning=FALSE}
+scc_raw_cfrrbs$seq_depth <- factor(scc_raw_cfrrbs$seq_depth, levels = c("2M", "5M", "10M", "15M", "20M"))
+
+# Define comparisons
+my_comparisons <- list(
+  c("2M", "5M"),
+  c("5M", "10M"),
+  c("10M","15M"),
+  c("10M", "20M"),
+  c("15M", "20M")
+)
+# Plot
+p1 <- ggplot(data = scc_raw_cfrrbs, aes(
+    x = seq_depth, y = SCC, fill = seq_depth)
+  ) +
+  #geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~deconv_tool, ncol = 5) +
+  stat_compare_means(
+      method = "wilcox.test", comparisons = my_comparisons,
+      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
+      method.args = list(alternative="less"),
+      label.y = c(1, 1.10, 1.20, 1.30), size = 3
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major.y = element_line(color = "grey90"),
+          panel.grid.minor.y = element_line(color = "grey90")) +
+  labs(title = "RRBS-CL dataset",
+       x = "", y = "SCC") +
+  scale_y_continuous(
+    breaks = c(0.4, 0.6, 0.8, 1) # only show these breaks
+  ) +
+  scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF"))  +
+  ylim=c(0.4,1.37)
+p1
+```
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- "../plots/08_preciseness"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Save the plot as an image
+output_file <- file.path(output_dir, paste0("preciseness_SCC_vs_seqdepth_cfRRBS_dataset_boxplots.pdf"))
+ggsave(output_file, plot = p1, width = 8, height = 4)
+```
+
+And do the same for 1-RMSE
+
+```{r warning=FALSE}
+rmse_raw_cfrrbs$seq_depth <- factor(rmse_raw_cfrrbs$seq_depth, levels = c("2M", "5M", "10M", "15M", "20M"))
+
+# Define comparisons
+my_comparisons <- list(
+  c("2M", "5M"),
+  c("5M", "10M"),
+  c("10M","15M"),
+  c("10M", "20M"),
+  c("15M", "20M")
+)
+
+# Plot
+p1 <- ggplot(data = rmse_raw_cfrrbs, aes(
+    x = seq_depth, y = `1-RMSE`, fill = seq_depth)
+  ) +
+  #geom_jitter(size=1.5, alpha=0.8, width = 0.3, aes(color = deconv_tool)) +
+  geom_boxplot(outliers = FALSE, alpha = 0.8) +
+  facet_wrap(~deconv_tool, ncol = 5) +
+  stat_compare_means(
+      method = "wilcox.test", comparisons = my_comparisons,
+      p.adjust.method = "BH", label = "adj.p", hide.ns = F,                    
+      method.args = list(alternative="less"),
+      label.y = c(1, 1.10, 1.20, 1.30), size = 3
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major.y = element_line(color = "grey90"),
+          panel.grid.minor.y = element_line(color = "grey90")) +
+  labs(title = "RRBS-CL dataset",
+       x = "", y = "1-RMSE") +
+  scale_y_continuous(
+    breaks = c(0.6, 0.8, 1) # only show these breaks
+  ) +
+  scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF"))  +
+  coord_cartesian(ylim=c(0.6,1.35))
+p1
+```
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- "../plots/08_preciseness"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Save the plot as an image
+output_file <- file.path(output_dir, paste0("preciseness_RMSE_vs_seqdepth_cfRRBS_dataset_boxplots.pdf"))
+ggsave(output_file, plot = p1, width = 8, height = 4)
+```
+
+Finally we can plot an heatmap of the median 1-RMSE at each sequencing depth to show the actual values
+
+```{r}
+table_rmse_seqdepth <- rmse_raw_cfrrbs %>%
+  group_by(deconv_tool, seq_depth) %>%
+  summarise(`1-RMSE` = median(`1-RMSE`)) %>%
+  pivot_wider(
+    names_from = seq_depth,
+    values_from = `1-RMSE`
+  )
+mat <- column_to_rownames(table_rmse_seqdepth, var = "deconv_tool")
+
+# Plot
+p1 <- Heatmap(mat,
+        name = "1-RMSE",
+        #col = col_fun,
+        cluster_rows = T,
+        show_row_dend = F,
+        cluster_columns = FALSE,
+        column_names_side = "top",
+        row_names_gp = gpar(fontsize = 10),
+        column_names_gp = gpar(fontsize = 12),
+        column_names_centered = T,
+        column_names_rot = 0,
+        cell_fun = function(j, i, x, y, width, height, fill) {
+          grid.text(sprintf("%.4f", mat[i, j]), x, y,
+                    gp = gpar(fontsize = 10, col = "black"))
+        },
+        heatmap_legend_param = list(title = "1-RMSE"))
+p1
+```
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- "../plots/08_preciseness"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Save the plot as an image
+output_file <- file.path(output_dir, paste0("preciseness_RMSE_vs_seqdepth_cfRRBS_dataset_heatmap.pdf"))
+pdf(output_file, width = 8, height = 6)
+draw(p1)
+dev.off()
 ```
 
 ## Analyse all datasets combined
@@ -567,8 +1009,7 @@ p1 <- ggplot(data = rmse_raw_aggr, aes(
        x = "", y = "1 - RMSE") +
   scale_x_reordered() +
   scale_fill_manual(values = tool_colors) +
-  scale_color_manual(values = tool_colors) +
-  ylim(0.5,1)
+  scale_color_manual(values = tool_colors)
 p1
 ```
 
@@ -587,7 +1028,7 @@ ggsave(output_file, plot = p1, width = 8, height = 4)
 
 ```{r}
 # Compute the SCC
-median_scc <- scc_raw_aggr %>% 
+median_scc <- scc_raw_aggr %>%
   group_by(deconv_tool) %>% 
   summarise(SCC = median(SCC)) %>%
   arrange(desc(SCC)) %>%
@@ -628,4 +1069,5 @@ if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 output_file <- file.path(output_dir, paste0("preciseness_SCC_all_dataset_boxplots.svg"))
 ggsave(output_file, plot = p1, width = 4, height = 4)
 ```
+
 
