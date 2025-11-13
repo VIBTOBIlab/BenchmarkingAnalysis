@@ -147,7 +147,7 @@ plots/
 ├── 05_additional_plots/         # Ranking and additional visualizations
 ├── 06_funkyheatmap/             # Funkyheatmap figure from publication
 ├── 07_scalability/              # Scalability analysis plots
-└── 08_preciseness/              # Preciseness analysis plots
+└── 08_preciseness/              # Accuracy on tumor fraction estimation
 ```
 
 ---
