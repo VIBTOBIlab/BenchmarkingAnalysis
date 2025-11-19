@@ -71,8 +71,8 @@ Alternatively, you can run the analysis using your local environment, but make s
 install.packages(c(
   "tidyverse", "dplyr", "tidyr", "stringr",
   "ggplot2", "ggpubr", "patchwork", "pROC",
-  "metrics", "devtools", "knitr", "rmarkdown", 
-  "remotes", "funkyheatmap", "svglite", "tidytext"
+  "devtools", "knitr", "rmarkdown", "remotes",
+  "funkyheatmap", "svglite", "tidytext"
 ))
 
 # Install Bioconductor packages
