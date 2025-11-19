@@ -52,7 +52,7 @@ Now, we will import all the results generated and described above. Note that her
 
 ```{r}
 df_raw <- read.csv("../resources/final_benchmarking_dataset.csv")
-bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico" & !(df_raw$deconv_tool %in% c("MeDeCom","RefFreeCellMix")))
+bench.res <- subset(df_raw, df_raw$mixture_type == "in_silico")
 ```
 
 ### Missing values
