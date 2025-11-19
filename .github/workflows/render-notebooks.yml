@@ -29,7 +29,6 @@ jobs:
             ggpubr
             patchwork
             pROC
-            metrics
             devtools
             knitr
             rmarkdown
