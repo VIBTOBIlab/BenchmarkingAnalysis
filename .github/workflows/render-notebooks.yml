@@ -17,9 +17,18 @@ jobs:
         with:
           r-version: '4.4.1'
 
+      - name: Cache R packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/R/Library
+            ${{ env.R_LIBS_USER }}
+          key: ${{ runner.os }}-r-${{ hashFiles('.github/**/*.lock', '.github/**/*.yml') }}
+
       - name: Install R packages
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
+          cache: true
           extra-packages: |
             tidyverse
             dplyr
