@@ -37,8 +37,6 @@ jobs:
             funkyheatmap
             svglite
             tidytext
-
-            # Bioconductor packages
             bioc::ComplexHeatmap
             bioc::circlize
 
