@@ -840,7 +840,7 @@ p1 <- ggplot(data = scc_raw_cfrrbs, aes(
     breaks = c(0.4, 0.6, 0.8, 1) # only show these breaks
   ) +
   scale_fill_manual(values = c("2M"="#FDE725FF","5M"="#7AD151FF","10M"="#2A788EFF","15M"="#414487FF","20M"="#440154FF"))  +
-  ylim=c(0.4,1.37)
+  coord_cartesian(ylim=c(0.4,1.37))
 p1
 ```
 
