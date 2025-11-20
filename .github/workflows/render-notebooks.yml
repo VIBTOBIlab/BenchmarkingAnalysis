@@ -1,52 +1,24 @@
 name: Render R Markdown Notebooks
+name: Test notebooks
 
-on:
-  push:
-    branches: [ "main" ]
+on: [push, pull_request]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up R
-        uses: r-lib/actions/setup-r@v2
+      - uses: conda-incubator/setup-miniconda@v3
         with:
-          r-version: '4.4.1'
-
-      - name: Cache R packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/R/Library
-            ${{ env.R_LIBS_USER }}
-          key: ${{ runner.os }}-r-${{ hashFiles('.github/**/*.lock', '.github/**/*.yml') }}
-
-      - name: Install R packages
-        uses: r-lib/actions/setup-r-dependencies@v2
-        with:
-          cache: true
-          extra-packages: |
-            tidyverse
-            dplyr
-            tidyr
-            stringr
-            ggplot2
-            ggpubr
-            patchwork
-            pROC
-            devtools
-            knitr
-            rmarkdown
-            remotes
-            funkyheatmap
-            svglite
-            tidytext
-            bioc::ComplexHeatmap
-            bioc::circlize
+          activate-environment: test-notebooks
+          environment-file: environment.yml
+          use-mamba: true
+          auto-activate-base: false
+          # Enable caching!
+          cache-environment: true
+          cache-downloads: true
 
       - name: Render all Rmd notebooks
         run: |

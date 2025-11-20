@@ -1,0 +1,39 @@
+name: test-notebooks
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - r-base=4.4.1
+  - r-tidyverse
+  - r-dplyr
+  - r-tidyr
+  - r-stringr
+  - r-ggplot2
+  - r-patchwork
+  - r-pROC
+  - r-knitr
+  - r-rmarkdown
+  - r-svglite
+  - r-tidytext
+  - bioconductor-complexheatmap
+  - bioconductor-circlize
+
+  # Needed to build R packages not on conda
+  - r-devtools
+  - r-remotes
+  - r-jsonlite
+  - r-xml2
+  - r-tidyverse
+  - pkg-config
+  - make
+  - gcc
+  - gxx
+
+  # Run post-install script
+  - rscript:
+      - |
+        install.packages(c(
+          "ggpubr",
+          "funkyheatmap"
+        ), repos="https
