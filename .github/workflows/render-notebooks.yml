@@ -21,6 +21,7 @@ jobs:
 
       - name: Render all Rmd notebooks
         run: |
+          conda activate test-notebooks
           Rscript -e '
             files <- list.files("notebooks", pattern = "\\.Rmd$", full.names = TRUE)
             for (f in files) {
