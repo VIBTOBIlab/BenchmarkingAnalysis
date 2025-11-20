@@ -9,19 +9,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: conda-incubator/setup-miniconda@v3
+      - name: Set up micromamba
+        uses: mamba-org/setup-micromamba@v1
         with:
           activate-environment: test-notebooks
           environment-file: environment.yml
-          use-mamba: true
-          auto-activate-base: false
-          # Enable caching!
           cache-environment: true
           cache-downloads: true
 
       - name: Render all Rmd notebooks
         run: |
-          conda activate test-notebooks
+          eval "$(micromamba shell hook --shell=bash)"
+          mamba activate test-notebooks
           Rscript -e '
             files <- list.files("notebooks", pattern = "\\.Rmd$", full.names = TRUE)
             for (f in files) {
