@@ -19,7 +19,7 @@ jobs:
       - name: Render all Rmd notebooks
         run: |
           eval "$(micromamba shell hook --shell=bash)"
-          mamba activate test-notebooks
+          micromamba activate test-notebooks
           Rscript -e '
             files <- list.files("notebooks", pattern = "\\.Rmd$", full.names = TRUE)
             for (f in files) {
