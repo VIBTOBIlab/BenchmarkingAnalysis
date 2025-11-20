@@ -62,7 +62,18 @@ Once logged in, you can open and run the `.Rmd` notebooks located in `/home/rstu
 
 ---
 
-### 2.2 Run the analyses with locally installed dependencies
+### 2.2 Run the analyses using conda
+
+Alternatively, you can run the analysis using the provided [conda environment](environment.yml)
+
+```bash
+conda env create -f environment.yml
+conda activate test-notebooks
+Rscript -e 'install.packages("funkyheatmap", repos="https://cloud.r-project.org")'
+```
+Once the environment is set up, you can use it to run the notebooks.
+
+### 2.3 Run the analyses with locally installed dependencies
 
 Alternatively, you can run the analysis using your local environment, but make sure that the following R packages are installed before running the notebooks.
 
@@ -72,19 +83,16 @@ install.packages(c(
   "tidyverse", "dplyr", "tidyr", "stringr",
   "ggplot2", "ggpubr", "patchwork", "pROC",
   "devtools", "knitr", "rmarkdown", "remotes",
-  "funkyheatmap", "svglite", "tidytext"
+  "funkyheatmap", "svglite", "tidytext", "circlize",
+  "BiocManager"
 ))
 
-# Install Bioconductor packages
-if (!requireNamespace("BiocManager", quietly = TRUE))
-    install.packages("BiocManager")
-
-BiocManager::install(c("ComplexHeatmap", "circlize"))
+BiocManager::install(c("ComplexHeatmap"))
 ```
 
 ---
 
-### 2.3 Analysis Workflow
+### 2.4 Analysis Workflow
 
 The analyses should be run in the following order. Each notebook generates plots saved in a dedicated subfolder under `plots/`:
 
@@ -134,7 +142,7 @@ The analyses should be run in the following order. Each notebook generates plots
 
 ---
 
-### 2.4 Summary of Output Structure
+### 2.5 Summary of Output Structure
 
 After running the notebooks, the `plots/` folder will be organized as follows:
 
