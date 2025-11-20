@@ -27,6 +27,3 @@ dependencies:
   - r-xml2
   - r-tidyverse
   - pkg-config
-  - make
-  - gcc
-  - gxx
