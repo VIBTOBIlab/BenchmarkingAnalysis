@@ -12,7 +12,6 @@ jobs:
       - name: Set up micromamba
         uses: mamba-org/setup-micromamba@v1
         with:
-          activate-environment: test-notebooks
           environment-file: environment.yml
           cache-environment: true
           cache-downloads: true
