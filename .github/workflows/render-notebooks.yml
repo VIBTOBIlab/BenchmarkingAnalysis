@@ -20,7 +20,7 @@ jobs:
         run: |
           eval "$(micromamba shell hook --shell=bash)"
           micromamba activate test-notebooks
-          Rscript -e 'install.packages("funkyheatmap")'
+          Rscript -e 'install.packages("funkyheatmap", repos="https://cloud.r-project.org")'
           Rscript -e '
             files <- list.files("notebooks", pattern = ".Rmd$", full.names = TRUE)
             for (f in files) {
