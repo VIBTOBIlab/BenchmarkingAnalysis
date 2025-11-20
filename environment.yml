@@ -19,7 +19,6 @@ dependencies:
   - r-ggpubr
   - r-circlize
   - bioconductor-complexheatmap
-  - bioconductor-circlize
 
   # Needed to build R packages not on conda
   - r-devtools
