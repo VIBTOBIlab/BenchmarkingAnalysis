@@ -16,6 +16,8 @@ dependencies:
   - r-rmarkdown
   - r-svglite
   - r-tidytext
+  - r-ggpubr
+  - r-circlize
   - bioconductor-complexheatmap
   - bioconductor-circlize
 
@@ -34,6 +36,5 @@ dependencies:
   - rscript:
       - |
         install.packages(c(
-          "ggpubr",
           "funkyheatmap"
-        ), repos="https
+        ), repos="https://cloud.r-project.org")
