@@ -1,0 +1,820 @@
+---
+title: "10. Analysis of reference-based tools performance in deconvolving in-silico mixtures using individual tumor samples"
+output: html_document
+date: "2025-09-23"
+author: "Edoardo Giuili"
+---
+
+## Introduction
+
+In this notebook we will analyse reference-based deconvolution tools performance
+in deconvolving in-silico mixtures generated mixing healthy cfDNA and individual
+tumor samples (unpooled samples), instead of pooling the samples from the same 
+tumor type into a unique BAM file (pooled samples). This analysis wants to check 
+whether the pooling of tumor samples into a unique one had a strong influence on
+the ranking of the tools due to a potential reduction of the intra-patient 
+heterogeneity due to the pooling. For this, we generated 10 replicates for 5 
+tumor fractions per tumor sample at a sequencing depth of 183M reads. Given that 
+we have 8 samples in total, this sums up to 300 in-silico mixtures.
+
+### Setting up the environment
+
+First, set up the main directory
+
+```{r setup}
+# Don't change this if you git cloned the entire GitHub repository and you are working in the notebooks/ folder
+knitr::opts_knit$set(root.dir = './')
+```
+
+Import the necessary libraries for the analysis
+
+```{r message=FALSE, warning=FALSE}
+library(ggpubr)
+library(dplyr)
+library(tidyverse)
+library(ComplexHeatmap)
+library(stringr)
+library(pROC)
+library(car)
+library(tidytext)
+library(patchwork)
+```
+
+Import the useful functions and the metrics
+
+```{r}
+source("../R/compute_auc.R")
+
+# RMSE
+rmse <- function(actual, predicted) {
+  round(sqrt(mean((actual - predicted)^2)),4)
+}
+# Spearman's rank correlation coefficient (SCC)
+scc <- function(actual, predicted) {
+  cor(actual, predicted, method = "spearman", use = "pairwise.complete.obs")
+}
+tool_colors <- c(
+  "CelFiE"             ="#A6CEE3", 
+  "CIBERSORT"          ="#1F78B4",
+  "Houseman_eq"        ="#B2DF8A", 
+  "Houseman_ineq"      ="#33A02C",
+  "EpiDISH"            ="#FB9A99", 
+  "EpiSCORE"           ="#E31A1C",
+  "MetDecode"          ="#FDBF6F", 
+  "meth_atlas"         ="#FF7F00",
+  "PRMeth"             ="#CAB2D6", 
+  "UXM"                ="#6A3D9A"
+)
+```
+
+Now, we will import all the results generated and described above. Note that 
+here we expect that you have git cloned the repository and thus have the expected 
+folder structure where in the folder resources/ there are the results files.
+From the old results, generated on the in-silico mixtures from pooling tumor 
+samples together, we will only select the predictions made on the 183M sequencing
+depth combination and on the tumor fractions specified below, which are the 5 
+tumor fractions generated using the tumor samples non-pooled.
+
+```{r}
+df_raw <- read.csv("../resources/final_benchmarking_dataset.csv")
+df_unmerged <- read.csv("../resources/refbased_results_unmerged_insilico_mixtures.csv")
+bench.res <- subset(df_raw, 
+                      df_raw$mixture_type == "in_silico" & 
+                      df_raw$seq_method == "wgbs" & 
+                      df_raw$seq_depth == "183M" &
+                      df_raw$expected_tf %in% c("0","0.001", "0.007", "0.01", "0.05", "0.5"))
+bench.res.zeros <- subset(bench.res, bench.res$expected_tf=="0")
+bench.res.zeros$batch <- "unpooled_samples"
+bench.res$batch <- "pooled_samples"
+df_unmerged$batch <- "unpooled_samples"
+fin.res <- rbind(bench.res, df_unmerged, bench.res.zeros)
+```
+
+### Missing values
+
+An important aspect to take into consideration is the number of missing values per tool.
+
+```{r}
+missing_percentage <- fin.res %>%
+     group_by(deconv_tool) %>%
+     summarise(
+         total = n(),
+         missing = sum(is.na(predicted_tf)),
+         percent_missing = 100 * missing / total
+     )
+missing_percentage
+```
+
+Since the presence of missing values is very low, we will just remove them 
+without penalizing the tools that produced missing values or imputing them.
+
+```{r}
+# Remove rows with NA values for further analysis 
+fin.res <- fin.res %>%
+  filter(!is.na(predicted_tf))
+```
+
+## Plot the results
+
+We can now compare the results obtained on the in-silico mixtures generated from
+the pooled samples vs the results obtained using the unpooled samples.
+
+### Rank the tools by median SCC
+
+```{r}
+# Compute the metrics: modify the RMSE= 1) nrmse 2) rmse 3) rmse of logit(values)
+scc_raw_wgbs <- fin.res %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarise(SCC = cor(expected_tf, predicted_tf, method = "spearman"), .groups = "drop")
+```
+
+#### BLCA
+
+Let's now check the results on the BLCA samples, and then proceed with the 3
+remaining tumor types.
+
+```{r}
+scc_raw_wgbs_blca1 <- subset(scc_raw_wgbs, scc_raw_wgbs$tumor_type =="BLCA_1")
+
+# Compute the SCC
+median_scc <- scc_raw_wgbs_blca1 %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
+scc_raw_wgbs_blca1$deconv_tool <- factor(scc_raw_wgbs_blca1$deconv_tool, levels = median_scc)
+
+p1 <- ggplot(scc_raw_wgbs_blca1, aes(x = deconv_tool, y = SCC, fill = deconv_tool)) +
+  geom_boxplot() +
+  labs(x = "", y = "SCC") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0.2, vjust = 0.2)) +
+  scale_fill_manual(values = tool_colors) + 
+  ggtitle("BLCA_1 (unpooled)")
+```
+
+
+```{r}
+scc_raw_wgbs_blca4 <- subset(scc_raw_wgbs, scc_raw_wgbs$tumor_type =="BLCA_4")
+
+# Compute the SCC
+median_scc <- scc_raw_wgbs_blca4 %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
+scc_raw_wgbs_blca4$deconv_tool <- factor(scc_raw_wgbs_blca4$deconv_tool, levels = median_scc)
+
+p2 <- ggplot(scc_raw_wgbs_blca4, aes(x = deconv_tool, y = SCC, fill = deconv_tool)) +
+  geom_boxplot() +
+  labs(x = "", y = "SCC") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0.2, vjust = 0.2)) +
+  scale_fill_manual(values = tool_colors) + 
+  ggtitle("BLCA_4 (unpooled)")
+```
+
+
+```{r}
+scc_raw_wgbs_blca <- subset(scc_raw_wgbs, scc_raw_wgbs$tumor_type =="BLCA")
+
+# Compute the SCC
+median_scc <- scc_raw_wgbs_blca %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
+scc_raw_wgbs_blca$deconv_tool <- factor(scc_raw_wgbs_blca$deconv_tool, levels = median_scc)
+
+p3 <- ggplot(scc_raw_wgbs_blca, aes(x = deconv_tool, y = SCC, fill = deconv_tool)) +
+  geom_boxplot() +
+  labs(x = "", y = "SCC") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0.2, vjust = 0.2)) +
+  scale_fill_manual(values = tool_colors) + 
+  ggtitle("BLCA (pooled)")
+```
+
+```{r}
+# Combine
+p <- (p1 / p2 / p3) +
+  plot_layout(guides = "collect") +
+  plot_annotation(theme = theme(legend.position = "right"))
+p
+```
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/10_performance_refbased_unmerged"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Combine and draw
+file_output <- paste0(output_dir,"/ranking_scc_blca.pdf")
+ggsave(file_output, p, width = 12, height = 10)
+```
+
+
+#### BRCA
+
+
+```{r}
+scc_raw_wgbs_brca3 <- subset(scc_raw_wgbs, scc_raw_wgbs$tumor_type =="BRCA_3")
+
+# Compute the SCC
+median_scc <- scc_raw_wgbs_brca3 %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
+scc_raw_wgbs_brca3$deconv_tool <- factor(scc_raw_wgbs_brca3$deconv_tool, levels = median_scc)
+
+p1 <- ggplot(scc_raw_wgbs_brca3, aes(x = deconv_tool, y = SCC, fill = deconv_tool)) +
+  geom_boxplot() +
+  labs(x = "", y = "SCC") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0.2, vjust = 0.2)) +
+  scale_fill_manual(values = tool_colors) + 
+  ggtitle("BRCA_3 (unpooled)")
+```
+
+
+```{r}
+scc_raw_wgbs_brca5 <- subset(scc_raw_wgbs, scc_raw_wgbs$tumor_type =="BRCA_5")
+
+# Compute the SCC
+median_scc <- scc_raw_wgbs_brca5 %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
+scc_raw_wgbs_brca5$deconv_tool <- factor(scc_raw_wgbs_brca5$deconv_tool, levels = median_scc)
+
+p2 <- ggplot(scc_raw_wgbs_brca5, aes(x = deconv_tool, y = SCC, fill = deconv_tool)) +
+  geom_boxplot() +
+  labs(x = "", y = "SCC") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0.2, vjust = 0.2)) +
+  scale_fill_manual(values = tool_colors) + 
+  ggtitle("BRCA_5 (unpooled)")
+```
+
+
+```{r}
+scc_raw_wgbs_brca <- subset(scc_raw_wgbs, scc_raw_wgbs$tumor_type =="BRCA")
+
+# Compute the SCC
+median_scc <- scc_raw_wgbs_brca %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
+scc_raw_wgbs_brca$deconv_tool <- factor(scc_raw_wgbs_brca$deconv_tool, levels = median_scc)
+
+p3 <- ggplot(scc_raw_wgbs_brca, aes(x = deconv_tool, y = SCC, fill = deconv_tool)) +
+  geom_boxplot() +
+  labs(x = "", y = "SCC") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0.2, vjust = 0.2)) +
+  scale_fill_manual(values = tool_colors) + 
+  ggtitle("BRCA (pooled)")
+```
+
+```{r}
+# Combine
+p <- (p1 / p2 / p3) +
+  plot_layout(guides = "collect") +
+  plot_annotation(theme = theme(legend.position = "right"))
+p
+```
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/10_performance_refbased_unmerged"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Combine and draw
+file_output <- paste0(output_dir,"/ranking_scc_brca.pdf")
+ggsave(file_output, p, width = 12, height = 10)
+```
+
+
+#### LUSC
+
+
+```{r}
+scc_raw_wgbs_lusc4 <- subset(scc_raw_wgbs, scc_raw_wgbs$tumor_type =="LUSC_4")
+
+# Compute the SCC
+median_scc <- scc_raw_wgbs_lusc4 %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
+scc_raw_wgbs_lusc4$deconv_tool <- factor(scc_raw_wgbs_lusc4$deconv_tool, levels = median_scc)
+
+p1 <- ggplot(scc_raw_wgbs_lusc4, aes(x = deconv_tool, y = SCC, fill = deconv_tool)) +
+  geom_boxplot() +
+  labs(x = "", y = "SCC") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0.2, vjust = 0.2)) +
+  scale_fill_manual(values = tool_colors) + 
+  ggtitle("LUSC_4 (unpooled)")
+```
+
+
+```{r}
+scc_raw_wgbs_lusc5 <- subset(scc_raw_wgbs, scc_raw_wgbs$tumor_type =="LUSC_5")
+
+# Compute the SCC
+median_scc <- scc_raw_wgbs_lusc5 %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
+scc_raw_wgbs_lusc5$deconv_tool <- factor(scc_raw_wgbs_blca4$deconv_tool, levels = median_scc)
+
+p2 <- ggplot(scc_raw_wgbs_lusc5, aes(x = deconv_tool, y = SCC, fill = deconv_tool)) +
+  geom_boxplot() +
+  labs(x = "", y = "SCC") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0.2, vjust = 0.2)) +
+  scale_fill_manual(values = tool_colors) + 
+  ggtitle("LUSC_5 (unpooled)")
+```
+
+
+```{r}
+scc_raw_wgbs_lusc <- subset(scc_raw_wgbs, scc_raw_wgbs$tumor_type =="LUSC")
+
+# Compute the SCC
+median_scc <- scc_raw_wgbs_lusc %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
+scc_raw_wgbs_lusc$deconv_tool <- factor(scc_raw_wgbs_lusc$deconv_tool, levels = median_scc)
+
+p3 <- ggplot(scc_raw_wgbs_lusc, aes(x = deconv_tool, y = SCC, fill = deconv_tool)) +
+  geom_boxplot() +
+  labs(x = "", y = "SCC") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0.2, vjust = 0.2)) +
+  scale_fill_manual(values = tool_colors) + 
+  ggtitle("LUSC (pooled)")
+```
+
+
+```{r}
+# Combine
+p <- (p1 / p2 / p3) +
+  plot_layout(guides = "collect") +
+  plot_annotation(theme = theme(legend.position = "right"))
+p
+```
+
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/10_performance_refbased_unmerged"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Combine and draw
+file_output <- paste0(output_dir,"/ranking_scc_lusc.pdf")
+ggsave(file_output, p, width = 12, height = 10)
+```
+
+
+#### LUAD
+
+
+```{r}
+scc_raw_wgbs_luad1 <- subset(scc_raw_wgbs, scc_raw_wgbs$tumor_type =="LUAD_1")
+
+# Compute the SCC
+median_scc <- scc_raw_wgbs_luad1 %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
+scc_raw_wgbs_luad1$deconv_tool <- factor(scc_raw_wgbs_luad1$deconv_tool, levels = median_scc)
+
+p1 <- ggplot(scc_raw_wgbs_luad1, aes(x = deconv_tool, y = SCC, fill = deconv_tool)) +
+  geom_boxplot() +
+  labs(x = "", y = "SCC") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0.2, vjust = 0.2)) +
+  scale_fill_manual(values = tool_colors) + 
+  ggtitle("LUAD_1 (unpooled)")
+```
+
+
+```{r}
+scc_raw_wgbs_luad5 <- subset(scc_raw_wgbs, scc_raw_wgbs$tumor_type =="LUAD_5")
+
+# Compute the SCC
+median_scc <- scc_raw_wgbs_luad5 %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
+scc_raw_wgbs_luad5$deconv_tool <- factor(scc_raw_wgbs_luad5$deconv_tool, levels = median_scc)
+
+p2 <- ggplot(scc_raw_wgbs_luad5, aes(x = deconv_tool, y = SCC, fill = deconv_tool)) +
+  geom_boxplot() +
+  labs(x = "", y = "SCC") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0.2, vjust = 0.2)) +
+  scale_fill_manual(values = tool_colors) + 
+  ggtitle("LUAD_5 (unpooled)")
+```
+
+
+```{r}
+scc_raw_wgbs_luad <- subset(scc_raw_wgbs, scc_raw_wgbs$tumor_type =="LUAD")
+
+# Compute the SCC
+median_scc <- scc_raw_wgbs_luad %>% 
+  group_by(deconv_tool) %>% 
+  summarise(SCC = median(SCC)) %>%
+  arrange(desc(SCC)) %>%
+  pull(deconv_tool)
+scc_raw_wgbs_luad$deconv_tool <- factor(scc_raw_wgbs_luad$deconv_tool, levels = median_scc)
+
+p3 <- ggplot(scc_raw_wgbs_luad, aes(x = deconv_tool, y = SCC, fill = deconv_tool)) +
+  geom_boxplot() +
+  labs(x = "", y = "SCC") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0.2, vjust = 0.2)) +
+  scale_fill_manual(values = tool_colors) + 
+  ggtitle("LUAD (pooled)")
+```
+
+
+```{r}
+# Combine
+p <- (p1 / p2 / p3) +
+  plot_layout(guides = "collect") +
+  plot_annotation(theme = theme(legend.position = "right"))
+p
+```
+
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/10_performance_refbased_unmerged"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Combine and draw
+file_output <- paste0(output_dir,"/ranking_scc_luad.pdf")
+ggsave(file_output, p, width = 12, height = 10)
+```
+
+
+### Check ranks correlation for pooled and unpooled samples (SCC)
+
+We can now check the correlation between the ranks of the tools when using the
+in silico mixtures generated with the pooled and unpooled samples. The ranks
+are obtained according to decreasing Spearman's rank correlation coefficient (SCC).
+
+#### BLCA
+
+```{r}
+make_rank_plot <- function(data, tumor_label, pooled_rank) {
+
+  df_rank <- data %>%
+    filter(tumor_type == tumor_label) %>%
+    group_by(deconv_tool) %>%
+    summarise(score = median(SCC, na.rm = TRUE), .groups = "drop") %>%
+    mutate(rank_target = rank(-score)) %>%
+    inner_join(pooled_rank, by = "deconv_tool")
+
+  cor_val <- cor(df_rank$rank_blca,
+                 df_rank$rank_target,
+                 method = "spearman",
+                 use = "complete.obs")
+
+  p <- ggplot(df_rank, aes(rank_blca, rank_target)) +
+    geom_point(size = 3) +
+    geom_text(aes(label = deconv_tool), vjust = -0.5, size = 6) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    theme_bw(base_size = 25) +
+    scale_x_continuous(breaks = 1:10, limits = c(1, 10)) +
+    scale_y_continuous(breaks = 1:10, limits = c(1, 10)) +
+    labs(
+      x = "Rank in BLCA (pooled)",
+      y = paste0("Rank in ", tumor_label)
+    ) +
+    annotate(
+      "text",
+      x = 2, y = 10,
+      label = paste0("Spearman coeff = ", round(cor_val, 3)),
+      hjust = 0, size = 7
+    )
+
+  list(plot = p, cor = cor_val)
+}
+```
+
+
+```{r}
+blca_pooled_rank <- scc_raw_wgbs %>%
+  filter(tumor_type == "BLCA") %>%
+  group_by(deconv_tool) %>%
+  summarise(score = median(SCC, na.rm = TRUE), .groups = "drop") %>%
+  mutate(rank_blca = rank(-score))
+
+res_1 <- make_rank_plot(scc_raw_wgbs, "BLCA_4", blca_pooled_rank)
+res_2 <- make_rank_plot(scc_raw_wgbs, "BLCA_1", blca_pooled_rank)
+p <- res_1$plot / res_2$plot
+p
+```
+
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/10_performance_refbased_unmerged"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Combine and draw
+file_output <- paste0(output_dir,"/correlation_scc_ranks_blca.pdf")
+ggsave(file_output, p, width = 12, height = 12)
+```
+
+#### BRCA
+
+```{r}
+make_rank_plot <- function(data, tumor_label, pooled_rank) {
+
+  df_rank <- data %>%
+    filter(tumor_type == tumor_label) %>%
+    group_by(deconv_tool) %>%
+    summarise(score = median(SCC, na.rm = TRUE), .groups = "drop") %>%
+    mutate(rank_target = rank(-score)) %>%
+    inner_join(pooled_rank, by = "deconv_tool")
+
+  cor_val <- cor(df_rank$rank_blca,
+                 df_rank$rank_target,
+                 method = "spearman",
+                 use = "complete.obs")
+
+  p <- ggplot(df_rank, aes(rank_blca, rank_target)) +
+    geom_point(size = 3) +
+    geom_text(aes(label = deconv_tool), vjust = -0.5, size = 6) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    theme_bw(base_size = 25) +
+    scale_x_continuous(breaks = 1:10, limits = c(1, 10)) +
+    scale_y_continuous(breaks = 1:10, limits = c(1, 10)) +
+    labs(
+      x = "Rank in BRCA (pooled)",
+      y = paste0("Rank in ", tumor_label)
+    ) +
+    annotate(
+      "text",
+      x = 2, y = 10,
+      label = paste0("Spearman coeff = ", round(cor_val, 3)),
+      hjust = 0, size = 7
+    )
+
+  list(plot = p, cor = cor_val)
+}
+```
+
+
+```{r}
+blca_pooled_rank <- scc_raw_wgbs %>%
+  filter(tumor_type == "BRCA") %>%
+  group_by(deconv_tool) %>%
+  summarise(score = median(SCC, na.rm = TRUE), .groups = "drop") %>%
+  mutate(rank_blca = rank(-score))
+
+res_1 <- make_rank_plot(scc_raw_wgbs, "BRCA_3", blca_pooled_rank)
+res_2 <- make_rank_plot(scc_raw_wgbs, "BRCA_5", blca_pooled_rank)
+p <- res_1$plot / res_2$plot
+p
+```
+
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/10_performance_refbased_unmerged"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Combine and draw
+file_output <- paste0(output_dir,"/correlation_scc_ranks_brca.pdf")
+ggsave(file_output, p, width = 12, height = 12)
+```
+
+#### LUAD
+
+```{r}
+make_rank_plot <- function(data, tumor_label, pooled_rank) {
+
+  df_rank <- data %>%
+    filter(tumor_type == tumor_label) %>%
+    group_by(deconv_tool) %>%
+    summarise(score = median(SCC, na.rm = TRUE), .groups = "drop") %>%
+    mutate(rank_target = rank(-score)) %>%
+    inner_join(pooled_rank, by = "deconv_tool")
+
+  cor_val <- cor(df_rank$rank_blca,
+                 df_rank$rank_target,
+                 method = "spearman",
+                 use = "complete.obs")
+
+  p <- ggplot(df_rank, aes(rank_blca, rank_target)) +
+    geom_point(size = 3) +
+    geom_text(aes(label = deconv_tool), vjust = -0.5, size = 6) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    theme_bw(base_size = 25) +
+    scale_x_continuous(breaks = 1:10, limits = c(1, 10)) +
+    scale_y_continuous(breaks = 1:10, limits = c(1, 10)) +
+    labs(
+      x = "Rank in LUAD (pooled)",
+      y = paste0("Rank in ", tumor_label)
+    ) +
+    annotate(
+      "text",
+      x = 2, y = 10,
+      label = paste0("Spearman coeff = ", round(cor_val, 3)),
+      hjust = 0, size = 7
+    )
+
+  list(plot = p, cor = cor_val)
+}
+```
+
+
+```{r}
+blca_pooled_rank <- scc_raw_wgbs %>%
+  filter(tumor_type == "LUAD") %>%
+  group_by(deconv_tool) %>%
+  summarise(score = median(SCC, na.rm = TRUE), .groups = "drop") %>%
+  mutate(rank_blca = rank(-score))
+
+res_1 <- make_rank_plot(scc_raw_wgbs, "LUAD_1", blca_pooled_rank)
+res_2 <- make_rank_plot(scc_raw_wgbs, "LUAD_5", blca_pooled_rank)
+p <- res_1$plot / res_2$plot
+p
+```
+
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/10_performance_refbased_unmerged"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Combine and draw
+file_output <- paste0(output_dir,"/correlation_scc_ranks_luad.pdf")
+ggsave(file_output, p, width = 12, height = 12)
+```
+
+#### LUSC
+
+```{r}
+make_rank_plot <- function(data, tumor_label, pooled_rank) {
+
+  df_rank <- data %>%
+    filter(tumor_type == tumor_label) %>%
+    group_by(deconv_tool) %>%
+    summarise(score = median(SCC, na.rm = TRUE), .groups = "drop") %>%
+    mutate(rank_target = rank(-score)) %>%
+    inner_join(pooled_rank, by = "deconv_tool")
+
+  cor_val <- cor(df_rank$rank_blca,
+                 df_rank$rank_target,
+                 method = "spearman",
+                 use = "complete.obs")
+
+  p <- ggplot(df_rank, aes(rank_blca, rank_target)) +
+    geom_point(size = 3) +
+    geom_text(aes(label = deconv_tool), vjust = -0.5, size = 6) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    theme_bw(base_size = 25) +
+    scale_x_continuous(breaks = 1:10, limits = c(1, 10)) +
+    scale_y_continuous(breaks = 1:10, limits = c(1, 10)) +
+    labs(
+      x = "Rank in LUSC (pooled)",
+      y = paste0("Rank in ", tumor_label)
+    ) +
+    annotate(
+      "text",
+      x = 2, y = 10,
+      label = paste0("Spearman coeff = ", round(cor_val, 3)),
+      hjust = 0, size = 7
+    )
+
+  list(plot = p, cor = cor_val)
+}
+```
+
+
+```{r}
+blca_pooled_rank <- scc_raw_wgbs %>%
+  filter(tumor_type == "LUSC") %>%
+  group_by(deconv_tool) %>%
+  summarise(score = median(SCC, na.rm = TRUE), .groups = "drop") %>%
+  mutate(rank_blca = rank(-score))
+
+res_1 <- make_rank_plot(scc_raw_wgbs, "LUSC_4", blca_pooled_rank)
+res_2 <- make_rank_plot(scc_raw_wgbs, "LUSC_5", blca_pooled_rank)
+p <- res_1$plot / res_2$plot
+p
+```
+
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/10_performance_refbased_unmerged"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Combine and draw
+file_output <- paste0(output_dir,"/correlation_scc_ranks_lusc.pdf")
+ggsave(file_output, p, width = 12, height = 12)
+```
+
+
+### Check correlation between RMSE and tumor purity
+
+We now want to investigate whether tumor purity of the samples analysed in this
+study and estimated in the [following study](https://www.nature.com/articles/ncomms9971#Bib1) 
+has an association with the RMSE.
+
+```{r}
+tumor_purity <- read.csv("../resources/tumor_purity.csv")
+purity.res.rmse <- merge(rmse_raw_wgbs, tumor_purity, by = c("tumor_type"))
+```
+
+Here we investigate the association with the tumor purity estimation using the
+CPE metric, which is computed as a consensus metric of other 4 metrics (see
+study above).
+
+```{r}
+# Basic scatter plot with facets
+p <- ggplot(purity.res.rmse, aes(x = CPE, y = `1-RMSE`)) +
+  geom_jitter(aes(color = tumor_type), size = 1, alpha = 0.8) +
+  geom_boxplot(aes(group = tumor_type), median.colour = "grey20",color = "grey20", outliers = F) +
+  theme_bw() +
+  theme(text = element_text(size = 12)) +
+  labs(x = "Purity (CPE)", y = "1-RMSE") + 
+  stat_cor(
+    aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),
+    method = "spearman",
+    label.x = 0.9,
+    label.y = 0.1
+  )
+p
+```
+
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/10_performance_refbased_unmerged"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Combine and draw
+file_output <- paste0(output_dir,"/cpe_rmse_corr.pdf")
+ggsave(file_output, p, width = 10, height = 6)
+```
+
+
+Here we investigate the association with the tumor purity estimation using the
+ESTIMATE metric, which estimates the tumor purity using a set of genes specific 
+for stromal and immune cells (see study above).
+
+
+```{r}
+# Basic scatter plot with facets
+p <- ggplot(purity.res.rmse, aes(x = ESTIMATE, y = `1-RMSE`)) +
+  geom_jitter(aes(color = tumor_type), size = 1, alpha = 0.8) +
+  geom_boxplot(aes(group = tumor_type), median.colour = "grey20",color = "grey20", outliers = F) +
+  theme_bw() +
+  theme(text = element_text(size = 12)) +
+  labs(x = "Purity (ESTIMATE)", y = "1-RMSE") + 
+  stat_cor(
+    aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),
+    method = "spearman",
+    label.x = 0.9,
+    label.y = 0.1
+  )
+p
+```
+
+```{r}
+# Create the main directory to save the plots
+output_dir <- "../plots/10_performance_refbased_unmerged"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+# Combine and draw
+file_output <- paste0(output_dir,"/estimate_rmse_corr.pdf")
+ggsave(file_output, p, width = 10, height = 6)
+```
+
+
+
+
+
+
+
+
+
+
