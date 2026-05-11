@@ -84,7 +84,7 @@ install.packages(c(
   "ggplot2", "ggpubr", "patchwork", "pROC",
   "devtools", "knitr", "rmarkdown", "remotes",
   "funkyheatmap", "svglite", "tidytext", "circlize",
-  "BiocManager"
+  "BiocManager", "car"
 ))
 
 BiocManager::install(c("ComplexHeatmap"))
@@ -140,6 +140,17 @@ The analyses should be run in the following order. Each notebook generates plots
    * Analyzes and visualizes **RMSE and SCC for tumor fraction prediction accuracy**.
    * Outputs to `plots/08_preciseness/`.
 
+9. **09_reference_free_analysis_different_samplesize.Rmd**
+
+   * Analyzes the performance of **reference-free tools** as the **sample size changes** (number of bulk samples to deconvolve).
+   * Outputs to `plots/09_refree_different_samplesizes/`.
+
+10. **10_performance_refbased_unmerged_insilico_mixtures.Rmd**
+
+   * Analyzes **reference-based tools performance** on in-silico mixtures using **individual (unpooled) tumor samples** instead of pooled samples.
+   * Evaluates whether pooling had a strong influence on tool rankings.
+   * Outputs to `plots/10_refbased_unmerged_mixtures/`.
+
 ---
 
 ### 2.5 Summary of Output Structure
@@ -155,7 +166,9 @@ plots/
 ├── 05_additional_plots/         # Ranking and additional visualizations
 ├── 06_funkyheatmap/             # Funkyheatmap figure from publication
 ├── 07_scalability/              # Scalability analysis plots
-└── 08_preciseness/              # Accuracy on tumor fraction estimation
+├── 08_preciseness/              # Accuracy on tumor fraction estimation
+├── 09_refree_different_samplesizes/  # Reference-free tools performance across sample sizes
+└── 10_refbased_unmerged_mixtures/   # Reference-based tools on unmerged individual tumor samples
 ```
 
 ---
