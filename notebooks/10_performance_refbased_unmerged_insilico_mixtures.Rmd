@@ -740,6 +740,11 @@ study and estimated in the [following study](https://www.nature.com/articles/nco
 has an association with the RMSE.
 
 ```{r}
+rmse_raw_wgbs <- fin.res %>%
+  filter(tumor_type %in% c("BLCA_1","BLCA_4","BRCA_3","BRCA_5",
+                           "LUAD_1","LUAD_5","LUSC_4","LUSC_5")) %>%
+  group_by(deconv_tool, dmr_tool, seq_depth, tumor_type) %>%
+  summarize("1-RMSE" = 1-rmse(expected_tf, predicted_tf))
 tumor_purity <- read.csv("../resources/tumor_purity.csv")
 purity.res.rmse <- merge(rmse_raw_wgbs, tumor_purity, by = c("tumor_type"))
 ```
