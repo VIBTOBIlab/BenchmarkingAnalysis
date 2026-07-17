@@ -50,7 +50,7 @@ You can run the full analysis inside a Docker container (already built using the
       -p 8787:8787 \
       -e PASSWORD=mypassword \ # Modify the password with a personal one
       -v "$(pwd)":/home/rstudio/benchmark \
-      egiuili/benchmark-rstudio:v3
+      egiuili/benchmark-rstudio:v4
    ```
 
 2. Open [http://localhost:8787](http://localhost:8787) in your web browser to access RStudio Server inside the container.
@@ -84,7 +84,8 @@ install.packages(c(
   "ggplot2", "ggpubr", "patchwork", "pROC",
   "devtools", "knitr", "rmarkdown", "remotes",
   "funkyheatmap", "svglite", "tidytext", "circlize",
-  "BiocManager", "car"
+  "BiocManager", "car", "PMCMRplus", "tibble", "purrr",
+  "ggrepel"
 ))
 
 BiocManager::install(c("ComplexHeatmap"))
@@ -151,6 +152,12 @@ The analyses should be run in the following order. Each notebook generates plots
    * Evaluates whether pooling had a strong influence on tool rankings.
    * Outputs to `plots/10_refbased_unmerged_mixtures/`.
 
+11. **11_ranking_robustness.Rmd**
+
+   * Assesses the **robustness of the final tool ranking** from `06_funkyheatmap.Rmd`, without recomputing or reimplementing its scoring logic.
+   * Adds a complementary **rank-then-aggregate (case-based)** scheme (Maier-Hein et al. 2018), compares it to 06's **aggregate-then-rank (metric-based)** scheme via **Kendall's tau**, runs a **bootstrap over combinations** (1000x) to estimate each tool's rank distribution, and performs a **Friedman test with Nemenyi post-hoc**.
+   * Outputs to `plots/11_ranking_robustness/`.
+
 ---
 
 ### 2.5 Summary of Output Structure
@@ -168,7 +175,8 @@ plots/
 ├── 07_scalability/              # Scalability analysis plots
 ├── 08_preciseness/              # Accuracy on tumor fraction estimation
 ├── 09_refree_different_samplesizes/  # Reference-free tools performance across sample sizes
-└── 10_refbased_unmerged_mixtures/   # Reference-based tools on unmerged individual tumor samples
+├── 10_refbased_unmerged_mixtures/   # Reference-based tools on unmerged individual tumor samples
+└── 11_ranking_robustness/       # Rank-aggregation sensitivity and bootstrap stability plots
 ```
 
 ---
