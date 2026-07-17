@@ -548,7 +548,7 @@ tool_order <- reference_ranking %>% arrange(Rank_reference) %>% pull(deconv_tool
 rank_distribution_plot_df <- rank_distribution %>%
   mutate(
     deconv_tool = factor(deconv_tool, levels = rev(tool_order)),
-    scheme = recode(scheme,
+    scheme = dplyr::recode(scheme,
                      aggregate_then_rank = "Aggregate-then-rank (reference)",
                      rank_then_aggregate = "Rank-then-aggregate (mean rank)")
   )
