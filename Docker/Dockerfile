@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install pak package manager
-RUN R -e "install.packages(c('metrics','svglite', 'BiocManager','funkyheatmap','tidyverse', 'dplyr', 'tidyr', 'stringr','ggplot2', 'ggpubr', 'patchwork', 'pROC', 'devtools', 'knitr', 'rmarkdown', 'remotes'))"
+RUN R -e "install.packages(c('metrics','svglite', 'BiocManager','funkyheatmap','tidyverse', 'dplyr', 'tidyr', 'stringr','ggplot2', 'ggpubr', 'patchwork', 'pROC', 'devtools', 'knitr', 'rmarkdown', 'remotes', 'tidytext', 'car', 'PMCMRplus', 'tibble', 'purrr', 'ggrepel'))"
 
 # Install Bioconductor packages
 RUN R -e "BiocManager::install(c('ComplexHeatmap', 'circlize'))"
