@@ -614,7 +614,7 @@ score_cfrrbs <- score_cfrrbs %>%
 
 ## Aggregate the metrics
 
-We will now aggregate the metrics of the datasets according to different variables. We will aggregate per metric to have an overall per metric performance. We will also aggregate per DMR tool, per sequencing depth and per dataset. We will give a different weight to each dataset to balance the difference in terms of sequencing technology. Since there is only 1 WGBS dataset and 3 RRBS-like datasets, we will give the weight of 1 to the WGBS, 0.5 to the RRBS and 0.25 to both the in-silico and in-vitro cfRRBS dataset.
+We will now aggregate the metrics of the datasets according to different variables. We will aggregate per metric to have an overall per metric performance. We will also aggregate per DMR tool, per sequencing depth and per dataset. We will give a different weight to each dataset to balance the difference in terms of sequencing technology. Since there is only 1 WGBS dataset and 2 RRBS-like datasets, we will give the weight of 0.5 to the WGBS and 0.25 to both RRBS datasets.
 
 ### Aggregate per metric
 
@@ -727,8 +727,6 @@ funkyheat_permetric_auc <- aggr_auc %>%
 ```
 
 And for the LoD
-
-And the same for the AUC-ROC score
 
 ```{r}
 # Compute the mean AUC-ROC score for WGBS

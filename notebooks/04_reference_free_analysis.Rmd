@@ -2037,3 +2037,417 @@ if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
 output_file <- file.path(output_dir, paste0("all_datasets_predicted_vs_expected_hf.svg"))
 ggsave(output_file, plot = p, width = 8, height = 4)
 ```
+
+## Calibration analysis
+
+The sections above characterise error magnitude (RMSE), rank concordance
+(SCC) and detection sensitivity/specificity (AUC, LoD), but none of them
+directly test whether a tool's estimates are **calibrated** -- i.e. whether
+`predicted_tf` tracks `expected_tf` on a 1:1 basis, or whether a tool is
+systematically biased (e.g. reference-free tools consistently overestimating
+tumour fraction, as suggested by the boxplots above). We address this with
+three explicit, per-tool calibration analyses pooling all three datasets
+(WGBS-TT, RRBS-TT, RRBS-CL) together: (1) a calibration regression of
+observed on expected fraction (slope and intercept), (2) the same regression
+restricted to the low-fraction range where clinical decisions are most
+sensitive to bias, and (3) Bland-Altman agreement plots.
+
+### Calibration slope and intercept
+
+For each tool we fit `predicted_tf ~ expected_tf` by ordinary least squares
+across all samples (all datasets, tumor types and sequencing depths pooled).
+A perfectly calibrated tool has slope = 1 and intercept = 0. A slope < 1
+indicates compression towards the mean (underestimation at high fractions,
+overestimation at low fractions); a positive intercept at low/zero fractions
+indicates a systematic overestimation bias, consistent with the LoD
+definition itself (the fraction at which predictions become distinguishable
+from the zero-fraction baseline).
+
+```{r}
+calibration_fit <- function(df) {
+  fit <- lm(predicted_tf ~ expected_tf, data = df)
+  coefs <- coef(fit)
+  ci <- tryCatch(confint(fit), error = function(e) matrix(NA, 2, 2))
+  data.frame(
+    Intercept = coefs[["(Intercept)"]],
+    Intercept_lwr = ci[1, 1], Intercept_upr = ci[1, 2],
+    Slope = coefs[["expected_tf"]],
+    Slope_lwr = ci[2, 1], Slope_upr = ci[2, 2],
+    R2 = summary(fit)$r.squared,
+    n = nrow(df)
+  )
+}
+
+calibration_stats <- bench %>%
+  group_by(deconv_tool) %>%
+  group_modify(~ calibration_fit(.x)) %>%
+  ungroup() %>%
+  mutate(RefType = ifelse(deconv_tool %in% c("MeDeCom", "RefFreeCellMix"), "Reference-free", "Reference-based")) %>%
+  arrange(desc(Slope))
+
+calibration_stats
+```
+
+```{r}
+p <- ggplot(calibration_stats, aes(x = reorder(deconv_tool, Slope), y = Slope, color = RefType)) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "grey50") +
+  geom_pointrange(aes(ymin = Slope_lwr, ymax = Slope_upr), size = 0.6) +
+  coord_flip() +
+  labs(
+    title = "Calibration slope (predicted_tf ~ expected_tf), all datasets pooled",
+    subtitle = "Dashed line = perfect calibration (slope = 1)",
+    x = "", y = "Calibration slope"
+  ) +
+  theme_classic() +
+  scale_color_manual(values = c(
+    "Reference-based" = "#009E73",
+    "Reference-free" = "#E69F00"
+  ))
+p
+```
+
+```{r}
+output_file <- file.path(output_dir, "calibration_slope_all_datasets.svg")
+ggsave(output_file, plot = p, width = 7, height = 5)
+```
+
+```{r}
+p <- ggplot(calibration_stats, aes(x = reorder(deconv_tool, Intercept), y = Intercept, color = RefType)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_pointrange(aes(ymin = Intercept_lwr, ymax = Intercept_upr), size = 0.6) +
+  coord_flip() +
+  labs(
+    title = "Calibration intercept (predicted_tf ~ expected_tf), all datasets pooled",
+    subtitle = "Dashed line = no bias at zero tumour fraction (intercept = 0)",
+    x = "", y = "Calibration intercept"
+  ) +
+  theme_classic() +
+  scale_color_manual(values = c(
+    "Reference-based" = "#009E73",
+    "Reference-free" = "#E69F00"
+  ))
+p
+```
+
+```{r}
+output_file <- file.path(output_dir, "calibration_intercept_all_datasets.svg")
+ggsave(output_file, plot = p, width = 7, height = 5)
+```
+
+### Calibration at high tumour fractions
+
+Because clinical relevance concentrates at high tumour fractions, we repeat
+the calibration regression restricted to `expected_tf >= 0.05`, which is
+where a systematic overestimation bias is most consequential (it directly
+inflates apparent sensitivity/LoD).
+
+```{r}
+calibration_stats_lf <- bench %>%
+  filter(expected_tf >= 0.05) %>%
+  group_by(deconv_tool) %>%
+  group_modify(~ calibration_fit(.x)) %>%
+  ungroup() %>%
+  mutate(RefType = ifelse(deconv_tool %in% c("MeDeCom", "RefFreeCellMix"), "Reference-free", "Reference-based")) %>%
+  arrange(desc(Intercept))
+
+calibration_stats_lf
+```
+
+```{r}
+p <- ggplot(calibration_stats_lf, aes(x = reorder(deconv_tool, Intercept), y = Intercept, color = RefType)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_pointrange(aes(ymin = Intercept_lwr, ymax = Intercept_upr), size = 0.6) +
+  coord_flip() +
+  labs(
+    title = "Calibration intercept, high tumour fractions only (expected_tf >= 0.05)",
+    subtitle = "Dashed line = no bias at zero tumour fraction (intercept = 0)",
+    x = "", y = "Calibration intercept"
+  ) +
+  theme_classic() +
+  scale_color_manual(values = c(
+    "Reference-based" = "#009E73",
+    "Reference-free" = "#E69F00"
+  ))
+p
+```
+
+```{r}
+output_file <- file.path(output_dir, "calibration_intercept_high_fractions.svg")
+ggsave(output_file, plot = p, width = 7, height = 5)
+```
+
+
+```{r}
+p <- ggplot(calibration_stats_lf, aes(x = reorder(deconv_tool, Slope), y = Slope, color = RefType)) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "grey50") +
+  geom_pointrange(aes(ymin = Slope_lwr, ymax = Slope_upr), size = 0.6) +
+  coord_flip() +
+  labs(
+    title = "Calibration slope, high tumour fractions only (expected_tf >= 0.05)",
+    subtitle = "Dashed line = perfect calibration (slope = 1)",
+    x = "", y = "Calibration slope"
+  ) +
+  theme_classic() +
+  scale_color_manual(values = c(
+    "Reference-based" = "#009E73",
+    "Reference-free" = "#E69F00"
+  ))
+p
+```
+
+```{r}
+output_file <- file.path(output_dir, "calibration_slope_high_fractions.svg")
+ggsave(output_file, plot = p, width = 7, height = 5)
+```
+
+### Bland-Altman agreement plots
+
+For each tool we plot the difference (`predicted_tf - expected_tf`) against
+the mean of the two (`(predicted_tf + expected_tf) / 2`), with the mean bias
+and the 95% limits of agreement (mean bias +/- 1.96 SD). A tool with a mean
+bias consistently above zero is systematically overestimating tumour
+fraction; funnel-shaped spread indicates the bias/variance is not constant
+across the range of tumour fractions.
+
+```{r fig.width=12, fig.height=9}
+bland_altman_df <- bench %>%
+  mutate(
+    diff_tf = predicted_tf - expected_tf,
+    mean_tf = (predicted_tf + expected_tf) / 2,
+    RefType = ifelse(deconv_tool %in% c("MeDeCom", "RefFreeCellMix"), "Reference-free", "Reference-based")
+  )
+
+bland_altman_stats <- bland_altman_df %>%
+  group_by(deconv_tool) %>%
+  summarise(
+    bias = mean(diff_tf),
+    sd_diff = sd(diff_tf),
+    loa_lower = bias - 1.96 * sd_diff,
+    loa_upper = bias + 1.96 * sd_diff,
+    .groups = "drop"
+  )
+
+bland_altman_stats
+```
+
+```{r fig.width=12, fig.height=9}
+p <- ggplot(bland_altman_df, aes(x = mean_tf, y = diff_tf, color = RefType)) +
+  geom_point(alpha = 0.15, size = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "grey40") +
+  geom_hline(data = bland_altman_stats, aes(yintercept = bias), color = "black", linewidth = 0.6) +
+  geom_hline(data = bland_altman_stats, aes(yintercept = loa_lower), color = "black", linetype = "dashed", linewidth = 0.4) +
+  geom_hline(data = bland_altman_stats, aes(yintercept = loa_upper), color = "black", linetype = "dashed", linewidth = 0.4) +
+  facet_wrap(~deconv_tool, scales = "free_y") +
+  labs(
+    title = "Bland-Altman: predicted_tf - expected_tf vs. mean(predicted_tf, expected_tf)",
+    subtitle = "Solid line = mean bias; dashed lines = 95% limits of agreement",
+    x = "Mean of predicted and expected tumour fraction",
+    y = "Predicted - expected tumour fraction"
+  ) +
+  theme_classic() +
+  scale_color_manual(values = c(
+    "Reference-based" = "#009E73",
+    "Reference-free" = "#E69F00"
+  )) +
+  theme(legend.position = "top")
+p
+```
+
+```{r}
+output_file <- file.path(output_dir, "bland_altman_all_tools.png")
+ggsave(output_file, plot = p, width = 12, height = 9)
+```
+
+### Calibration summary table
+
+```{r}
+calibration_summary <- calibration_stats %>%
+  select(deconv_tool, RefType, Slope, Intercept, R2) %>%
+  inner_join(
+    calibration_stats_lf %>% select(deconv_tool, Slope_lf = Slope, Intercept_lf = Intercept),
+    by = "deconv_tool"
+  ) %>%
+  inner_join(bland_altman_stats, by = "deconv_tool") %>%
+  arrange(desc(Intercept))
+
+calibration_summary
+```
+
+```{r}
+write.csv(calibration_summary, file.path(output_dir, "calibration_summary.csv"), row.names = FALSE)
+```
+
+### Post-hoc recalibration
+
+The calibration slope/intercept above can be used to *correct* each tool's
+predictions after the fact: inverting the fitted line
+`predicted_tf = Intercept + Slope * expected_tf` gives
+`predicted_tf_corrected = (predicted_tf - Intercept) / Slope`, a per-tool
+linear recalibration fitted on the same pooled data used above. This is a
+diagnostic device: it isolates how much of each tool's
+disagreement with `expected_tf` is a *fixable, linear* bias, versus
+irreducible scatter that a simple recalibration cannot remove. We apply the
+pooled (all-datasets) slope/intercept from the "Calibration slope and
+intercept" section above.
+
+```{r}
+calib_params <- calibration_stats %>% select(deconv_tool, Intercept, Slope)
+
+bench_corrected <- bench %>%
+  left_join(calib_params, by = "deconv_tool") %>%
+  mutate(predicted_tf_corrected = (predicted_tf - Intercept) / Slope) %>%
+  select(-Intercept, -Slope)
+```
+
+#### Predicted vs. expected, after correction
+
+Recalibrated counterpart of the "Predicted vs expected fractions" plots
+above (fractions < 0.05); compare directly against those raw-prediction
+plots.
+
+```{r fig.width=12, fig.height=9}
+plot_calib_corrected <- bench_corrected %>%
+  filter(expected_tf < 0.05) %>%
+  mutate(RefType = ifelse(deconv_tool %in% c("MeDeCom", "RefFreeCellMix"), "Reference-free", "Reference-based"))
+
+levels_tf <- sort(unique(plot_calib_corrected$expected_tf))
+
+p <- ggplot(plot_calib_corrected, aes(
+  x = as.factor(expected_tf), y = predicted_tf_corrected,
+  color = RefType, fill = RefType)) +
+  geom_boxplot(outliers = FALSE, median.colour = "grey20", color = "grey20") +
+  geom_line(data = data.frame(
+    x = seq_along(levels_tf),
+    y = levels_tf
+  ), aes(x = x, y = y), color = "red", linetype = "dashed", inherit.aes = FALSE) +
+  facet_wrap(~deconv_tool) +
+  labs(
+    title = "Recalibrated predicted vs. expected fraction (fractions < 0.05)",
+    x = "Expected tumoral fraction",
+    y = "Predicted tumoral fraction (recalibrated)"
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_manual(values = c(
+    "Reference-based" = "#009E73",
+    "Reference-free" = "#E69F00"
+  )) +
+  scale_fill_manual(values = c(
+    "Reference-based" = "#009E73",
+    "Reference-free" = "#E69F00"
+  )) +
+  coord_cartesian(ylim = c(0, 0.1))
+p
+```
+
+```{r}
+output_file <- file.path(output_dir, "calibration_correction_predicted_vs_expected_lf.svg")
+ggsave(output_file, plot = p, width = 8, height = 4)
+```
+
+#### Bland-Altman, after correction
+
+Recalibrated counterpart of the Bland-Altman plot above.
+
+```{r fig.width=12, fig.height=9}
+bland_altman_corrected <- bench_corrected %>%
+  mutate(
+    RefType = ifelse(deconv_tool %in% c("MeDeCom", "RefFreeCellMix"), "Reference-free", "Reference-based"),
+    diff_tf = predicted_tf_corrected - expected_tf,
+    mean_tf = (predicted_tf_corrected + expected_tf) / 2
+  )
+
+bland_altman_corrected_stats <- bland_altman_corrected %>%
+  group_by(deconv_tool) %>%
+  summarise(
+    bias = mean(diff_tf),
+    sd_diff = sd(diff_tf),
+    loa_lower = bias - 1.96 * sd_diff,
+    loa_upper = bias + 1.96 * sd_diff,
+    .groups = "drop"
+  )
+
+bland_altman_corrected_stats
+```
+
+```{r fig.width=12, fig.height=9}
+p <- ggplot(bland_altman_corrected, aes(x = mean_tf, y = diff_tf, color = RefType)) +
+  geom_point(alpha = 0.15, size = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "grey40") +
+  geom_hline(data = bland_altman_corrected_stats, aes(yintercept = bias), color = "black", linewidth = 0.6) +
+  geom_hline(data = bland_altman_corrected_stats, aes(yintercept = loa_lower), color = "black", linetype = "dashed", linewidth = 0.4) +
+  geom_hline(data = bland_altman_corrected_stats, aes(yintercept = loa_upper), color = "black", linetype = "dashed", linewidth = 0.4) +
+  facet_wrap(~deconv_tool, scales = "free_y") +
+  labs(
+    title = "Bland-Altman, recalibrated predictions",
+    subtitle = "Solid line = mean bias; dashed lines = 95% limits of agreement",
+    x = "Mean of predicted and expected tumour fraction",
+    y = "Predicted (recalibrated) - expected tumour fraction"
+  ) +
+  theme_classic() +
+  scale_color_manual(values = c(
+    "Reference-based" = "#009E73",
+    "Reference-free" = "#E69F00"
+  )) +
+  theme(legend.position = "top")
+p
+```
+
+```{r}
+output_file <- file.path(output_dir, "bland_altman_corrected.png")
+ggsave(output_file, plot = p, width = 12, height = 9)
+```
+
+#### RMSE, before and after correction
+
+Since RMSE is the metric most directly affected by a fixable linear bias, we
+also report it before and after recalibration (pooled across datasets),
+which quantifies how much of each tool's error was attributable to
+calibration bias rather than irreducible scatter.
+
+```{r}
+rmse_compare <- bench_corrected %>%
+  filter(expected_tf != 0) %>%
+  mutate(RefType = ifelse(deconv_tool %in% c("MeDeCom", "RefFreeCellMix"), "Reference-free", "Reference-based")) %>%
+  group_by(deconv_tool, RefType) %>%
+  summarise(
+    RMSE_raw = sqrt(mean((expected_tf - predicted_tf)^2)),
+    RMSE_corrected = sqrt(mean((expected_tf - predicted_tf_corrected)^2)),
+    .groups = "drop"
+  ) %>%
+  mutate(RMSE_reduction_pct = 100 * (RMSE_raw - RMSE_corrected) / RMSE_raw) %>%
+  arrange(desc(RMSE_reduction_pct))
+
+rmse_compare
+```
+
+```{r}
+write.csv(rmse_compare, file.path(output_dir, "rmse_raw_vs_corrected.csv"), row.names = FALSE)
+```
+
+```{r fig.width=8, fig.height=6}
+rmse_compare_plot <- rmse_compare %>%
+  mutate(deconv_tool = factor(deconv_tool, levels = deconv_tool[order(RMSE_raw)]))
+
+p <- ggplot(rmse_compare_plot) +
+  geom_segment(aes(x = deconv_tool, xend = deconv_tool, y = RMSE_raw, yend = RMSE_corrected),
+               color = "grey60") +
+  geom_point(aes(x = deconv_tool, y = RMSE_raw, color = RefType), shape = 1, size = 3, stroke = 1.2) +
+  geom_point(aes(x = deconv_tool, y = RMSE_corrected, color = RefType), shape = 16, size = 3) +
+  coord_flip() +
+  labs(
+    title = "RMSE before (open circle) and after (filled circle) recalibration",
+    x = "", y = "RMSE"
+  ) +
+  theme_classic() +
+  scale_color_manual(values = c(
+    "Reference-based" = "#009E73",
+    "Reference-free" = "#E69F00"
+  ))
+p
+```
+
+```{r}
+output_file <- file.path(output_dir, "rmse_raw_vs_corrected.svg")
+ggsave(output_file, plot = p, width = 8, height = 6)
+```

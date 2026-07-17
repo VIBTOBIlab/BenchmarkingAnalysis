@@ -1,0 +1,627 @@
+---
+title: "11. Ranking robustness: rank-aggregation sensitivity and bootstrap stability"
+author: "Edoardo Giuili"
+date: "2026-07-16"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+## Introduction
+
+This notebook explores how robust the final deconvolution-tool ranking
+is. It is purely additive to `06_funkyheatmap.Rmd`: the existing
+**aggregate-then-rank** ranking (min-max scale each metric within a
+combination, average, then rank the averages -- i.e. `overall_score` in
+06) is *not* recomputed or reimplemented here. Instead we execute 06's
+own code verbatim (via `knitr::purl()` + `source()`) and reuse its
+objects directly, so there is exactly one implementation of that logic
+in the whole repository.
+
+On top of that fixed reference ranking, this notebook adds:
+
+1.  A complementary **rank-then-aggregate (case-based)** scheme, in the
+    sense of Maier-Hein et al. 2018 ("Why rankings of biomedical image
+    analysis competitions should be interpreted with care", *Nat
+    Commun*): for each metric (RMSE, SCC, AUC, LoD) and each *case* (a
+    combination = one tumor_type x seq_depth within a dataset), tools
+    are ranked directly on the **raw, unscaled** metric value -- no
+    min-max scaling anywhere, since ranks are already scale-free. The
+    per-metric ranks within a case are averaged into one consensus
+    per-case rank, and those per-case ranks are aggregated across cases
+    (mean, default; median exposed as a sensitivity check) using the
+    same dataset weights as 06. This is the classical "rank, then
+    aggregate" (case-based) scheme, contrasted with 06's "aggregate,
+    then rank" (metric-based) scheme, which min-max scales and averages
+    the metrics *before* ranking.
+2.  **Kendall's tau** between the two schemes, as a single robustness
+    number.
+3.  A **bootstrap over combinations** (resampling the (dataset x
+    tumor_type x seq_depth) blocks with replacement, 1000x), recomputing
+    both rankings each time, to report each tool's rank distribution and
+    % of resamples ranked 1st.
+4.  A **Friedman test + Nemenyi post-hoc** on the complete combination x
+    tool blocks.
+5.  Plots: a bootstrap rank-distribution "blob" plot (dot size =
+    frequency of rank, in the style of Fig 2B) and a scheme-comparison
+    plot.
+
+The **resampling/blocking unit** throughout is a *combination*: one
+(dataset x tumor_type x seq_depth) triple. Every combination is a
+complete block containing a value (a `Score`, and separately the raw
+RMSE/SCC/AUC used for the case-based scheme) for all 12 deconvolution
+tools (both reference-based and the two reference-free tools, MeDeCom
+and RefFreeCellMix).
+
+### Setting up the environment
+
+```{r setup-07}
+knitr::opts_knit$set(root.dir = './')
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+```{r message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(stringr)
+library(PMCMRplus)
+library(tibble)
+library(purrr)
+library(ggrepel)
+set.seed(42)
+```
+
+## Step 1: reuse 06's aggregate-then-rank ranking, unchanged
+
+We do not copy or reimplement any of 06's scoring logic. Instead, we
+extract 06's R code chunks with `knitr::purl()` and `source()` them,
+which executes the notebook's own code exactly as written. We only need
+everything **up to and including the `overall_score` computation**; the
+chunks after that in 06 deal purely with plotting the funkyheatmap
+(building the `funky_heatmap()` figure, which needs the `funkyheatmap`
+package and logo image files) and are not needed here, so we stop
+sourcing right before the `palettes <- tribble(...)` chunk.
+
+```{r message=FALSE, warning=FALSE}
+notebook_06_path <- "06_funkyheatmap.Rmd"
+purled_06_path <- tempfile(fileext = ".R")
+
+invisible(knitr::purl(notebook_06_path, output = purled_06_path,
+                      documentation = 0, quiet = TRUE))
+
+lines_06 <- readLines(purled_06_path)
+# Everything from here on in 06 is funkyheatmap plotting code (funky_heatmap(),
+# logos, ggsave); we stop just before it so we don't need the funkyheatmap
+# package or the logo PNGs to obtain the reference ranking.
+plot_cutoff <- grep("^palettes <- tribble\\(", lines_06)[1]
+stopifnot(!is.na(plot_cutoff))
+lines_06_scoring <- lines_06[seq_len(plot_cutoff - 1)]
+
+# 06 reuses the variable name `aucroc_data` for each of the three datasets in
+# turn (wgbs, then rrbs, then cfrrbs), so only the last one would survive in
+# env_06. To also get the raw (pre-min-max-scaled) per-case AUC values needed
+# for the case-based scheme below -- without re-running 06's expensive nested
+# AUC loop a second time -- we snapshot `aucroc_data` into a dataset-specific
+# name right before each point where 06 itself consumes it (i.e. right before
+# each `auc_<dataset> <- aucroc_data %>% ...` line). This does not alter any
+# of 06's own computations, it just keeps an extra copy of an intermediate
+# object 06 already produces.
+snapshot_targets <- c("auc_wgbs <- aucroc_data", "auc_rrbs <- aucroc_data", "auc_cfrrbs <- aucroc_data")
+snapshot_names <- c("aucroc_data_wgbs", "aucroc_data_rrbs", "aucroc_data_cfrrbs")
+for (i in seq_along(snapshot_targets)) {
+  target_idx <- grep(paste0("^", snapshot_targets[i]), lines_06_scoring, fixed = FALSE)[1]
+  stopifnot(!is.na(target_idx))
+  lines_06_scoring <- append(
+    lines_06_scoring,
+    paste0(snapshot_names[i], " <- aucroc_data"),
+    after = target_idx - 1
+  )
+}
+
+env_06 <- new.env()
+source(textConnection(lines_06_scoring), local = env_06)
+```
+
+This gives us, from 06, unchanged: `bench` (the harmonized ref-based +
+ref-free long table), `in_silico_wgbs` / `in_silico_rrbs` /
+`in_silico_cfrrbs` (the raw per-sample predictions), `aucroc_data_wgbs`
+/ `_rrbs` / `_cfrrbs` (raw per-case, per-tumor-fraction AUC, i.e. 06's
+own `aucroc_data` snapshotted per dataset), `lod.stats` (raw per-sample
+LoD statistics), `score_wgbs` / `score_rrbs` / `score_cfrrbs` (06's
+per-combination, within-combination min-max-scaled `Score`), and
+`overall_score` (06's final aggregate-then-rank ranking with dataset
+weights WGBS = 0.45, RRBS = 0.225, cfRRBS = 0.225, plus scalability =
+0.1). The case-based scheme below uses the raw AUC/SCC/RMSE/LoD values
+(i.e. computed the same way as 06, just read off *before* 06's
+min-max-scaling step) rather than
+`score_wgbs`/`score_rrbs`/`score_cfrrbs`.
+
+```{r}
+reference_ranking <- env_06$overall_score %>%
+  arrange(desc(Overall_Score)) %>%
+  mutate(Rank_reference = rank(-Overall_Score, ties.method = "average")) %>%
+  select(deconv_tool, Overall_Score, Rank_reference)
+
+reference_ranking
+```
+
+We reuse 06's exact coded weights (0.45 / 0.225 / 0.225 / 0.1) below for
+the rank-then-aggregate scheme, so both schemes are driven by identical
+weights.
+
+```{r}
+weights_used <- tibble::tibble(
+  dataset = c("wgbs", "rrbs", "cfrrbs", "scalability"),
+  weight = c(0.45, 0.225, 0.225, 0.1)
+)
+weights_used
+```
+
+## Step 2: build the long combination-level table
+
+### 2a. Score-level table (used for the Friedman/Nemenyi block matrix)
+
+Each of `score_wgbs`, `score_rrbs`, `score_cfrrbs` is a per-combination
+table: one row per (deconv_tool, tumor_type, seq_depth), with `Score`
+min-max scaled within that combination. This is only used later for the
+Friedman/Nemenyi test (which needs a single combination x tool value
+matrix); the case-based ranking scheme itself is built from the raw
+per-metric values in 2b, not from `Score`.
+
+```{r}
+combo_scores <- bind_rows(
+  env_06$score_wgbs   %>% mutate(dataset = "wgbs",   weight = 0.45),
+  env_06$score_rrbs   %>% mutate(dataset = "rrbs",   weight = 0.225),
+  env_06$score_cfrrbs %>% mutate(dataset = "cfrrbs", weight = 0.225)
+) %>%
+  mutate(
+    seq_depth = as.character(seq_depth),
+    combination_id = paste(dataset, tumor_type, seq_depth, sep = "_")
+  ) %>%
+  select(combination_id, dataset, tumor_type, seq_depth, deconv_tool, Score, weight)
+
+n_tools <- n_distinct(combo_scores$deconv_tool)
+
+combo_completeness <- combo_scores %>%
+  count(combination_id, dataset, weight, name = "n_tools_present")
+
+cat("Total combinations (dataset x tumor_type x seq_depth):",
+    n_distinct(combo_scores$combination_id), "\n")
+cat("Total tools:", n_tools, "\n")
+cat("Combinations with all", n_tools, "tools present (complete blocks):",
+    sum(combo_completeness$n_tools_present == n_tools), "/",
+    nrow(combo_completeness), "\n")
+
+head(combo_scores)
+```
+
+### 2b. Raw per-metric, per-case table (used for the case-based scheme)
+
+For the case-based scheme we need the **raw, unscaled** RMSE / SCC / AUC
+per case, i.e. exactly the intermediate values 06 computes right before
+its min-max-scaling step (`meanAUC` before `AUC_minmax`, `SCC` before
+`SCC_minmax`, per-case mean `RMSE` before `RMSE_minmax`). 06 itself does
+not keep these intermediates around (they get overwritten by the scaled
+version in the same pipe), so we recompute them here using 06's own
+harmonized data (`env_06$in_silico_wgbs/rrbs/cfrrbs`) and 06's own
+snapshotted `aucroc_data_wgbs/rrbs/cfrrbs` (see above) -- i.e. the same
+inputs and the same per-case grouping as 06, just reading the value off
+one pipe step earlier, so no min-max scaling is applied anywhere in this
+scheme.
+
+RMSE is an error (lower = better); SCC and AUC are higher = better. LoD
+(the detectable tumor fraction, lower = better) is available in 06's
+`lod.stats` table (built at 06 lines 223-224 and extended per dataset)
+at per-(deconv_tool, dmr_tool, tumor_type, seq_depth) granularity. 06
+only pools it to a single per-(deconv_tool, dataset) value when building
+`Score`, but the raw `lod.stats` is actually resolved per case, so for
+the case-based scheme we use it at the case level: we average `lod` over
+`dmr_tool` to get one LoD per (deconv_tool, tumor_type, seq_depth), then
+rank it within each case alongside RMSE/SCC/AUC. This lets LoD
+contribute genuine between-case variation to the per-case consensus
+rank, rather than being folded in as a dataset-level constant.
+
+```{r}
+rmse_case <- function(actual, predicted) sqrt(mean((actual - predicted)^2))
+
+compute_raw_metrics <- function(in_silico_df, aucroc_df) {
+  raw_auc <- aucroc_df %>%
+    group_by(deconv_tool, seq_depth, tumor_type, expected_tf) %>%
+    summarise(AUC_per_fraction = mean(auc), .groups = "drop") %>%
+    group_by(deconv_tool, seq_depth, tumor_type) %>%
+    summarise(AUC = mean(AUC_per_fraction), .groups = "drop")
+
+  raw_scc <- in_silico_df %>%
+    group_by(deconv_tool, seq_depth, tumor_type) %>%
+    summarise(SCC = cor(expected_tf, predicted_tf, method = "spearman"), .groups = "drop")
+
+  raw_rmse <- in_silico_df %>%
+    filter(expected_tf != 0) %>%
+    group_by(deconv_tool, seq_depth, tumor_type, expected_tf) %>%
+    summarise(RMSE_per_fraction = rmse_case(expected_tf, predicted_tf), .groups = "drop") %>%
+    group_by(deconv_tool, seq_depth, tumor_type) %>%
+    summarise(RMSE = mean(RMSE_per_fraction), .groups = "drop")
+
+  raw_auc %>%
+    inner_join(raw_scc, by = c("deconv_tool", "seq_depth", "tumor_type")) %>%
+    inner_join(raw_rmse, by = c("deconv_tool", "seq_depth", "tumor_type"))
+}
+
+raw_metrics_wgbs   <- compute_raw_metrics(env_06$in_silico_wgbs,   env_06$aucroc_data_wgbs)
+raw_metrics_rrbs   <- compute_raw_metrics(env_06$in_silico_rrbs,   env_06$aucroc_data_rrbs)
+raw_metrics_cfrrbs <- compute_raw_metrics(env_06$in_silico_cfrrbs, env_06$aucroc_data_cfrrbs)
+
+# Raw (pre-scaling) LoD, per case: 06's `lod.stats` is resolved per
+# (deconv_tool, dmr_tool, tumor_type, seq_depth). We collapse over dmr_tool to
+# one LoD per (deconv_tool, tumor_type, seq_depth) so it can be ranked within
+# each case alongside the other metrics.
+raw_lod_case <- env_06$lod.stats %>%
+  mutate(lod = as.numeric(lod), seq_depth = as.character(seq_depth)) %>%
+  group_by(deconv_tool, tumor_type, seq_depth) %>%
+  summarise(LoD = mean(lod, na.rm = TRUE), .groups = "drop")
+
+raw_metrics_long <- bind_rows(
+  raw_metrics_wgbs   %>% mutate(dataset = "wgbs",   weight = 0.45),
+  raw_metrics_rrbs   %>% mutate(dataset = "rrbs",   weight = 0.225),
+  raw_metrics_cfrrbs %>% mutate(dataset = "cfrrbs", weight = 0.225)
+) %>%
+  mutate(seq_depth = as.character(seq_depth)) %>%
+  left_join(raw_lod_case, by = c("deconv_tool", "tumor_type", "seq_depth")) %>%
+  mutate(combination_id = paste(dataset, tumor_type, seq_depth, sep = "_")) %>%
+  select(combination_id, dataset, tumor_type, seq_depth, deconv_tool, weight, RMSE, SCC, AUC, LoD)
+
+head(raw_metrics_long)
+```
+
+## Step 3: rank-then-aggregate (case-based) scheme
+
+For each case (combination) we rank tools separately on each metric's
+raw value -- **higher-is-better** for SCC and AUC, **lower-is-better**
+for RMSE and LoD -- then average the (up to) 4 per-metric ranks into a
+single per-case consensus rank. Those per-case ranks are then aggregated
+across cases with the same dataset weights as 06 (weighted mean,
+default; weighted median exposed as a sensitivity check via `agg_fun`).
+This mirrors the case-based ("rank, then aggregate") scheme as used e.g.
+in Maier-Hein et al. 2018.
+
+```{r}
+per_case_consensus_rank <- function(metrics_long) {
+  # Rank keeping NAs as NA (na.last = "keep") so a metric that is missing for a
+  # tool in a case does not get silently ranked "worst"; case_rank then
+  # averages only the metrics actually available in that case.
+  metrics_long %>%
+    group_by(combination_id) %>%
+    mutate(
+      rank_RMSE = rank(RMSE,  ties.method = "average", na.last = "keep"),  # lower RMSE = better
+      rank_SCC  = rank(-SCC,  ties.method = "average", na.last = "keep"),  # higher SCC = better
+      rank_AUC  = rank(-AUC,  ties.method = "average", na.last = "keep"),  # higher AUC = better
+      rank_LoD  = rank(LoD,   ties.method = "average", na.last = "keep")   # lower LoD = better
+    ) %>%
+    ungroup() %>%
+    rowwise() %>%
+    mutate(case_rank = mean(c(rank_RMSE, rank_SCC, rank_AUC, rank_LoD), na.rm = TRUE)) %>%
+    ungroup()
+}
+
+weighted_median <- function(x, w) {
+  ord <- order(x)
+  x <- x[ord]; w <- w[ord]
+  cum_w <- cumsum(w) / sum(w)
+  x[which(cum_w >= 0.5)[1]]
+}
+
+rank_then_aggregate <- function(metrics_long, agg_fun = mean) {
+  ranked <- per_case_consensus_rank(metrics_long)
+
+  ranked %>%
+    group_by(deconv_tool) %>%
+    summarise(
+      Agg_Rank = if (identical(agg_fun, mean)) {
+        sum(case_rank * weight) / sum(weight)
+      } else if (identical(agg_fun, median)) {
+        weighted_median(case_rank, weight)
+      } else {
+        agg_fun(case_rank, weight)
+      },
+      .groups = "drop"
+    ) %>%
+    arrange(Agg_Rank) %>%
+    mutate(Rank_rta = rank(Agg_Rank, ties.method = "average"))
+}
+
+rta_ranking_mean <- rank_then_aggregate(raw_metrics_long, agg_fun = mean)
+rta_ranking_mean
+```
+
+Sensitivity check with `median` instead of `mean` (per Maier-Hein et
+al., mean-based aggregation after ranking is expected to be the more
+robust of the two):
+
+```{r}
+rta_ranking_median <- rank_then_aggregate(raw_metrics_long, agg_fun = median)
+rta_ranking_median
+```
+
+## Step 4: compare the two schemes
+
+```{r}
+scheme_comparison <- reference_ranking %>%
+  select(deconv_tool, Rank_reference) %>%
+  inner_join(rta_ranking_mean %>% select(deconv_tool, Rank_rta), by = "deconv_tool") %>%
+  inner_join(
+    rta_ranking_median %>% select(deconv_tool, Rank_rta_median = Rank_rta),
+    by = "deconv_tool"
+  ) %>%
+  arrange(Rank_reference)
+
+scheme_comparison
+```
+
+Kendall's tau between the aggregate-then-rank (reference) and
+rank-then-aggregate (mean) schemes, as a single robustness number:
+
+```{r}
+kendall_tau <- cor(
+  scheme_comparison$Rank_reference,
+  scheme_comparison$Rank_rta,
+  method = "kendall"
+)
+
+kendall_test <- cor.test(
+  scheme_comparison$Rank_reference,
+  scheme_comparison$Rank_rta,
+  method = "kendall"
+)
+
+cat(sprintf("Kendall's tau (aggregate-then-rank vs. rank-then-aggregate, mean): %.3f (p = %.4g)\n",
+            kendall_tau, kendall_test$p.value))
+
+kendall_tau_median <- cor(
+  scheme_comparison$Rank_reference,
+  scheme_comparison$Rank_rta_median,
+  method = "kendall"
+)
+cat(sprintf("Kendall's tau (aggregate-then-rank vs. rank-then-aggregate, median): %.3f\n",
+            kendall_tau_median))
+```
+
+## Step 5: bootstrap over combinations
+
+We resample the `combination_id` blocks with replacement (1000
+replicates). Because the same combination can be drawn more than once in
+a replicate, each draw is tagged with a unique suffix (`__b1`, `__b2`,
+...) so duplicated blocks are treated as separate blocks rather than
+being silently collapsed by a `group_by`. Both schemes
+(aggregate-then-rank and rank-then-aggregate) are recomputed from
+scratch on every bootstrap replicate.
+
+```{r}
+combination_ids <- unique(combo_scores$combination_id)
+stopifnot(setequal(combination_ids, unique(raw_metrics_long$combination_id)))
+n_boot <- 1000
+
+aggregate_then_rank_once <- function(scores_df) {
+  # Mirrors 06's overall_score logic exactly (weighted mean of Score across
+  # combinations, then rank), but operating on a resampled long table where
+  # combination_id may contain duplicate-draw suffixes.
+  scores_df %>%
+    group_by(deconv_tool) %>%
+    summarise(Overall_Score = sum(Score * weight) / sum(weight), .groups = "drop") %>%
+    arrange(desc(Overall_Score)) %>%
+    mutate(Rank_reference = rank(-Overall_Score, ties.method = "average"))
+}
+
+run_bootstrap_replicate <- function(i) {
+  # Draw the SAME resample of combinations for both schemes, so any
+  # difference between them on a given replicate reflects the aggregation
+  # order, not different resampled data.
+  drawn <- sample(combination_ids, length(combination_ids), replace = TRUE)
+  draw_key <- tibble(
+    combination_id = drawn,
+    draw_id = paste0(drawn, "__b", seq_along(drawn))
+  )
+
+  boot_scores <- combo_scores %>%
+    inner_join(draw_key, by = "combination_id", relationship = "many-to-many") %>%
+    mutate(combination_id = draw_id) %>%
+    select(-draw_id)
+
+  boot_metrics <- raw_metrics_long %>%
+    inner_join(draw_key, by = "combination_id", relationship = "many-to-many") %>%
+    mutate(combination_id = draw_id) %>%
+    select(-draw_id)
+
+  ref_rank <- aggregate_then_rank_once(boot_scores) %>%
+    transmute(deconv_tool, replicate = i, scheme = "aggregate_then_rank", Rank = Rank_reference)
+  rta_rank <- rank_then_aggregate(boot_metrics, agg_fun = mean) %>%
+    transmute(deconv_tool, replicate = i, scheme = "rank_then_aggregate", Rank = Rank_rta)
+
+  bind_rows(ref_rank, rta_rank)
+}
+
+boot_results <- purrr::map_dfr(seq_len(n_boot), run_bootstrap_replicate)
+```
+
+```{r}
+rank_distribution <- boot_results %>%
+  count(scheme, deconv_tool, Rank, name = "freq") %>%
+  group_by(scheme, deconv_tool) %>%
+  mutate(pct = 100 * freq / sum(freq)) %>%
+  ungroup()
+
+pct_rank1 <- boot_results %>%
+  filter(Rank == 1) %>%
+  count(scheme, deconv_tool, name = "n_rank1") %>%
+  mutate(pct_rank1 = 100 * n_rank1 / n_boot) %>%
+  select(-n_rank1)
+
+rank1_summary <- reference_ranking %>%
+  select(deconv_tool, Rank_reference) %>%
+  left_join(pct_rank1 %>% filter(scheme == "aggregate_then_rank") %>%
+              select(deconv_tool, pct_rank1_aggregate_then_rank = pct_rank1),
+            by = "deconv_tool") %>%
+  left_join(pct_rank1 %>% filter(scheme == "rank_then_aggregate") %>%
+              select(deconv_tool, pct_rank1_rank_then_aggregate = pct_rank1),
+            by = "deconv_tool") %>%
+  mutate(across(starts_with("pct_rank1"), ~replace_na(.x, 0))) %>%
+  arrange(Rank_reference)
+
+rank1_summary
+```
+
+## Step 6: Friedman test + Nemenyi post-hoc
+
+We run the Friedman test (deconvolution tools = treatments, combinations
+= blocks) followed by the Nemenyi post-hoc test on complete blocks only,
+for **both** schemes: once on 06's min-max-scaled `Score` (reference,
+aggregate-then-rank), and once on the raw per-case consensus rank used
+for the case-based scheme (Step 3), since the two are on different
+scales and shouldn't be tested with a single shared matrix.
+
+```{r}
+build_block_matrix <- function(long_df, value_col) {
+  block_matrix_df <- long_df %>%
+    select(combination_id, deconv_tool, all_of(value_col)) %>%
+    pivot_wider(names_from = deconv_tool, values_from = all_of(value_col))
+
+  complete_rows <- complete.cases(block_matrix_df %>% select(-combination_id))
+  block_matrix_complete <- block_matrix_df[complete_rows, ]
+  block_matrix <- as.matrix(block_matrix_complete %>% select(-combination_id))
+  rownames(block_matrix) <- block_matrix_complete$combination_id
+
+  list(
+    matrix = block_matrix,
+    n_total = nrow(block_matrix_df),
+    n_complete = sum(complete_rows)
+  )
+}
+
+run_friedman_nemenyi <- function(block_info, label) {
+  cat(sprintf("[%s] Combinations available: %d. Complete blocks (all %d tools present): %d.\n",
+              label, block_info$n_total, n_tools, block_info$n_complete))
+
+  if (block_info$n_complete < 2) {
+    cat(sprintf("[%s] Fewer than 2 complete blocks available -- Friedman/Nemenyi skipped.\n", label))
+    return(invisible(NULL))
+  }
+
+  friedman_result <- friedman.test(block_info$matrix)
+  print(friedman_result)
+  print(PMCMRplus::frdAllPairsNemenyiTest(block_info$matrix))
+  invisible(friedman_result)
+}
+```
+
+### 6a. Aggregate-then-rank (reference, min-max-scaled `Score`)
+
+```{r}
+block_info_score <- build_block_matrix(combo_scores, "Score")
+n_total_combinations <- block_info_score$n_total
+n_complete_combinations <- block_info_score$n_complete
+invisible(run_friedman_nemenyi(block_info_score, "aggregate-then-rank (Score)"))
+```
+
+### 6b. Rank-then-aggregate (case-based, raw per-case consensus rank)
+
+```{r}
+case_ranks_wide <- per_case_consensus_rank(raw_metrics_long) %>%
+  select(combination_id, deconv_tool, case_rank)
+
+block_info_case_rank <- build_block_matrix(case_ranks_wide, "case_rank")
+invisible(run_friedman_nemenyi(block_info_case_rank, "rank-then-aggregate (case_rank)"))
+```
+
+## Step 7: plots
+
+### Bootstrap rank-distribution blob plot
+
+Dot size = frequency (%) with which a tool received a given rank across
+the 1000 bootstrap replicates, faceted by aggregation scheme, in the
+style of Fig 2B. Tools are ordered by their reference
+(aggregate-then-rank) rank.
+
+```{r fig.width=9, fig.height=6}
+tool_order <- reference_ranking %>% arrange(Rank_reference) %>% pull(deconv_tool)
+
+rank_distribution_plot_df <- rank_distribution %>%
+  mutate(
+    deconv_tool = factor(deconv_tool, levels = rev(tool_order)),
+    scheme = recode(scheme,
+                     aggregate_then_rank = "Aggregate-then-rank (reference)",
+                     rank_then_aggregate = "Rank-then-aggregate (mean rank)")
+  )
+
+p_blob <- ggplot(rank_distribution_plot_df, aes(x = Rank, y = deconv_tool, size = pct)) +
+  geom_point(alpha = 0.75, color = "#2c7fb8") +
+  scale_size_continuous(name = "% of\nresamples", range = c(0.5, 12)) +
+  scale_x_continuous(breaks = seq_len(n_tools)) +
+  facet_wrap(~scheme) +
+  labs(
+    title = "Bootstrap rank-distribution across combinations (1000 resamples)",
+    x = "Rank (1 = best)",
+    y = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.minor = element_blank())
+
+p_blob
+```
+
+```{r}
+output_dir <- "../plots/11_ranking_robustness"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+ggsave(file.path(output_dir, "bootstrap_rank_distribution_blobplot.svg"),
+       p_blob, width = 12, height = 6)
+```
+
+### Scheme-comparison plot
+
+Reference (aggregate-then-rank) rank vs. rank-then-aggregate (mean) rank
+for each tool, with the identity line shown for reference; points
+falling on the diagonal indicate perfect agreement between the two
+schemes.
+
+```{r fig.width=7, fig.height=6}
+p_scheme <- ggplot(scheme_comparison, aes(x = Rank_reference, y = Rank_rta, label = deconv_tool)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey60") +
+  geom_point(size = 3, color = "#e34a33") +
+  ggrepel::geom_text_repel(size = 3.5, seed = 42) +
+  scale_x_continuous(breaks = seq_len(n_tools)) +
+  scale_y_continuous(breaks = seq_len(n_tools)) +
+  labs(
+    title = sprintf("Aggregate-then-rank vs. rank-then-aggregate (Kendall's tau = %.3f)", kendall_tau),
+    x = "Rank -- aggregate-then-rank (reference)",
+    y = "Rank -- rank-then-aggregate (mean rank)"
+  ) +
+  coord_equal() +
+  theme_minimal(base_size = 12)
+
+p_scheme
+```
+
+```{r}
+ggsave(file.path(output_dir, "scheme_comparison.svg"), p_scheme, width = 8, height = 6)
+```
+
+## Summary
+
+```{r}
+cat(sprintf(
+  "Reference ranking (06, aggregate-then-rank) vs. rank-then-aggregate (mean): Kendall's tau = %.3f\n",
+  kendall_tau
+))
+cat(sprintf(
+  "Reference ranking vs. rank-then-aggregate (median, sensitivity check): Kendall's tau = %.3f\n",
+  kendall_tau_median
+))
+cat(sprintf(
+  "Bootstrap: %d replicates over %d combinations (dataset x tumor_type x seq_depth).\n",
+  n_boot, length(combination_ids)
+))
+cat(sprintf(
+  "Friedman/Nemenyi: %d / %d combinations used as complete blocks.\n",
+  n_complete_combinations, n_total_combinations
+))
+```
