@@ -1,0 +1,101 @@
+---
+title: "12. Correlation between dilution factor and predicted tumor fraction"
+author: "Edoardo Giuili"
+date: "2026-07-29"
+output: html_document
+---
+
+## Introduction
+
+In this tutorial we want to assess how the predicted tumor fraction (`predicted_tf`) of each deconvolution tool changes as a cfDNA sample is progressively diluted with reads from a pool of healthy cfDNA samples.
+
+The `dilution` column encodes the dilution level: `0X` is the original, undiluted sample, while `1X`-`5X` indicate that the sample was diluted by adding 1 to 5 times its original number of reads from a healthy cfDNA pool. As the dilution factor increases, the relative amount of tumor-derived signal in the sample decreases, so we expect `predicted_tf` to decrease monotonically with increasing dilution.
+
+We consider both the reference-based deconvolution tools (`merged_deconvolution_dilution_cfDNA.csv`) and the reference-free deconvolution tools (`merged_deconvolution_refree_dilution_cfDNA.csv`). The reference-free dataset additionally has a `regions` column (the genomic regions used as input features), which is not relevant for this correlation analysis and is dropped when combining the two datasets.
+
+### Setting up the environment
+
+First, set up the main directory
+
+```{r setup}
+# Don't change this if you git cloned the entire GitHub repository and you are working in the notebooks/ folder
+knitr::opts_knit$set(root.dir = './')
+```
+
+Import the necessary libraries for the analysis
+
+```{r message=FALSE, warning=FALSE}
+library(ggpubr)
+library(dplyr)
+library(tidyverse)
+```
+
+Now, we will import the reference-based and reference-free dilution results and combine them into a single dataframe. Note that here we expect that you have git cloned the repository and thus have the expected folder structure where in the folder resources/ there are the results files.
+
+```{r}
+df_refbased <- read.csv("../resources/merged_deconvolution_dilution_cfDNA.csv") %>%
+  mutate(method = "reference-based")
+
+df_refree <- read.csv("../resources/merged_deconvolution_refree_dilution_cfDNA.csv") %>%
+  select(-regions) %>%
+  mutate(method = "reference-free")
+
+bench.res <- bind_rows(df_refbased, df_refree) %>%
+  filter(!is.na(predicted_tf))
+```
+
+Convert the `dilution` column (e.g. `"0X"`, `"1X"`, ...) into a numeric dilution factor, and specify the colors used consistently across the other notebooks for each deconvolution tool.
+
+```{r}
+bench.res <- bench.res %>%
+  mutate(dilution_factor = as.numeric(str_remove(dilution, "X")))
+
+bench.res$dilution <- factor(bench.res$dilution, levels = paste0(0:5, "X"))
+```
+
+
+
+## Relative decrease in predicted tumor fraction, per sample
+
+In this part, we look at the *relative* decrease of `predicted_tf` as each sample is diluted, rather than its absolute value. For every sample (and, for the reference-based tools, every DMR tool), we express `predicted_tf` at each dilution level relative to that same sample's own `0X` (undiluted) value, on a log2 scale:
+
+$$\text{relative decrease} = \log_2\left(\frac{\text{predicted_tf}}{\text{predicted_tf at 0X}}\right)$$
+
+By construction the relative decrease is always exactly `0` at `0X`. As a simple visual reference, we take the expected behaviour to be a halving of signal at every additional dilution step, i.e. `-1` per step on the log2 scale, reaching `-5` at `5X`.
+
+```{r}
+bench.res <- bench.res %>%
+  mutate(dmr_tool_grp = coalesce(dmr_tool, "none"))
+
+baseline_tf <- bench.res %>%
+  filter(dilution_factor == 0) %>%
+  select(sample, deconv_tool, dmr_tool_grp, baseline_predicted_tf = predicted_tf)
+
+rel_decrease <- bench.res %>%
+  left_join(baseline_tf, by = c("sample", "deconv_tool", "dmr_tool_grp")) %>%
+  filter(!is.na(baseline_predicted_tf)) %>%
+  mutate(relative_decrease = 1 - (baseline_predicted_tf / predicted_tf))
+```
+
+We plot one line per sample (per DMR tool, where applicable), colored by sample so that each sample's dilution trajectory can be followed individually across facets, and faceted by deconvolution tool (each with its own y-axis range, since the magnitude of the decrease varies substantially across tools), ordered as before by the strength of the dilution/predicted_tf correlation. A dashed grey line marks the expected `-1`-per-step trajectory (halving of signal at every dilution level, reaching `-5` at `5X`).
+
+```{r fig.width=14, fig.height=9}
+expected_curve <- data.frame(dilution_factor = 0:5) %>%
+  mutate(relative_decrease = -dilution_factor)  # -1 per dilution step, i.e. halving of predicted_tf at each level
+
+p4 <- ggplot(rel_decrease, aes(x = dilution_factor, y = relative_decrease, color = sample, group = interaction(sample, dmr_tool_grp))) +
+  geom_line(data = expected_curve, aes(x = dilution_factor, y = relative_decrease), inherit.aes = FALSE, linetype = "dashed", color = "grey40", linewidth = 0.6) +
+  geom_line(alpha = 0.5, linewidth = 0.4) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  scale_x_continuous(breaks = 0:5) +
+  facet_wrap(~ method + deconv_tool, scales = "free_y") +
+  labs(x = "Dilution factor (X)", y = "Fold decrease in predicted_tf", color = "Sample") +
+  theme_classic() +
+  theme(legend.position = "none")
+p4
+```
+
+```{r}
+ggsave(paste0(output_dir, "/fold_decrease_predicted_tf_per_tool.pdf"), p4, width = 14, height = 9)
+```
+

@@ -124,20 +124,6 @@ env_06 <- new.env()
 source(textConnection(lines_06_scoring), local = env_06)
 ```
 
-This gives us, from 06, unchanged: `bench` (the harmonized ref-based +
-ref-free long table), `in_silico_wgbs` / `in_silico_rrbs` /
-`in_silico_cfrrbs` (the raw per-sample predictions), `aucroc_data_wgbs`
-/ `_rrbs` / `_cfrrbs` (raw per-case, per-tumor-fraction AUC, i.e. 06's
-own `aucroc_data` snapshotted per dataset), `lod.stats` (raw per-sample
-LoD statistics), `score_wgbs` / `score_rrbs` / `score_cfrrbs` (06's
-per-combination, within-combination min-max-scaled `Score`), and
-`overall_score` (06's final aggregate-then-rank ranking with dataset
-weights WGBS = 0.45, RRBS = 0.225, cfRRBS = 0.225, plus scalability =
-0.1). The case-based scheme below uses the raw AUC/SCC/RMSE/LoD values
-(i.e. computed the same way as 06, just read off *before* 06's
-min-max-scaling step) rather than
-`score_wgbs`/`score_rrbs`/`score_cfrrbs`.
-
 ```{r}
 reference_ranking <- env_06$overall_score %>%
   arrange(desc(Overall_Score)) %>%
@@ -210,18 +196,6 @@ snapshotted `aucroc_data_wgbs/rrbs/cfrrbs` (see above) -- i.e. the same
 inputs and the same per-case grouping as 06, just reading the value off
 one pipe step earlier, so no min-max scaling is applied anywhere in this
 scheme.
-
-RMSE is an error (lower = better); SCC and AUC are higher = better. LoD
-(the detectable tumor fraction, lower = better) is available in 06's
-`lod.stats` table (built at 06 lines 223-224 and extended per dataset)
-at per-(deconv_tool, dmr_tool, tumor_type, seq_depth) granularity. 06
-only pools it to a single per-(deconv_tool, dataset) value when building
-`Score`, but the raw `lod.stats` is actually resolved per case, so for
-the case-based scheme we use it at the case level: we average `lod` over
-`dmr_tool` to get one LoD per (deconv_tool, tumor_type, seq_depth), then
-rank it within each case alongside RMSE/SCC/AUC. This lets LoD
-contribute genuine between-case variation to the per-case consensus
-rank, rather than being folded in as a dataset-level constant.
 
 ```{r}
 rmse_case <- function(actual, predicted) sqrt(mean((actual - predicted)^2))

@@ -1,0 +1,217 @@
+---
+title: "13. Deconvolution performance across top marker combinations"
+author: "Edoardo Giuili"
+date: "2026-07-31"
+output: html_document
+---
+
+## Introduction
+
+In this tutorial we want to assess how the performance of the reference-based deconvolution tools changes when varying the number of top differentially methylated markers (DMRs) used as input features, from the top 25 up to the top 500 markers ranked by significance. We evaluate this using three metrics, consistent with the other notebooks: the root-mean-squared error (RMSE), the Spearman's rank correlation coefficient (SCC), and the AUC-ROC.
+
+### Setting up the environment
+
+First, set up the main directory
+
+```{r setup}
+# Don't change this if you git cloned the entire GitHub repository and you are working in the notebooks/ folder
+knitr::opts_knit$set(root.dir = './')
+```
+
+Import the necessary libraries for the analysis
+
+```{r message=FALSE, warning=FALSE}
+library(ggpubr)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(pROC)
+```
+
+Import the useful metrics. Note that we do not reuse `compute_auc()` from `../R/compute_auc.R` here, since it expects a `seq_depth` column which is not present in this dataset (the marker-combination dataset varies `top_markers` instead); we use a local equivalent that only depends on `expected_tf`/`predicted_tf`/`deconv_tool`.
+
+```{r}
+# RMSE
+rmse <- function(actual, predicted) {
+  round(sqrt(mean((actual - predicted)^2, na.rm = TRUE)), 4)
+}
+
+# ROC/AUC helper (same logic as compute_auc.R, without the seq_depth/tumor_type/dmr_tool metadata columns)
+compute_auc_markers <- function(filt_df, fraction, deconv, markers) {
+  true_labels <- filt_df$expected_tf
+  true_labels[true_labels > 0] <- 1
+  roc_curve <- roc(true_labels, filt_df$predicted_tf, quiet = TRUE)
+
+  data.frame(
+    auc = as.numeric(roc_curve$auc),
+    expected_tf = fraction,
+    deconv_tool = deconv,
+    top_markers = markers
+  )
+}
+```
+
+Now, we will import the results generated on the top markers combinations. Note that here we expect that you have git cloned the repository and thus have the expected folder structure where in the folder resources/ there are the results files.
+
+```{r}
+df_raw <- read.csv("../resources/merged_deconvolution_markers_combination.csv")
+bench.res <- df_raw %>%
+  filter(!is.na(predicted_tf))
+```
+
+Order the `top_markers` levels (from fewest to most markers used) and specify the colors used consistently across the other notebooks for each deconvolution tool.
+
+```{r}
+marker_levels <- c("top25", "top50", "top100", "top250", "top500")
+bench.res$top_markers <- factor(bench.res$top_markers, levels = marker_levels)
+
+tool_colors <- c(
+  "CelFiE"             ="#A6CEE3",
+  "CIBERSORT"          ="#1F78B4",
+  "Houseman_eq"        ="#B2DF8A",
+  "Houseman_ineq"      ="#33A02C",
+  "EpiDISH"            ="#FB9A99",
+  "EpiSCORE"           ="#E31A1C",
+  "MetDecode"          ="#FDBF6F",
+  "meth_atlas"         ="#FF7F00",
+  "PRMeth"             ="#CAB2D6",
+  "UXM"                ="#6A3D9A"
+)
+```
+
+```{r}
+# Create a directory to save the plots (optional)
+output_dir <- "../plots/13_top_markers_combination"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+```
+
+## RMSE across top marker combinations
+
+We compute the RMSE between the expected and the observed `predicted_tf`, for every deconvolution tool at each `top_markers` level. As in `08_preciseness_tumor_fractions.Rmd`, we use the raw RMSE without min-max scaling it across deconvolution tools, since we want to check, within each deconvolution tool, whether the performance changes when varying the number of top markers used. We exclude samples with `expected_tf == 0`, since RMSE is only meaningful on samples with a real, nonzero tumor fraction to compare against.
+
+```{r}
+rmse_markers <- bench.res %>%
+  filter(expected_tf != 0) %>%
+  group_by(deconv_tool, top_markers) %>%
+  summarise(RMSE = rmse(expected_tf, predicted_tf), .groups = "drop") %>%
+  mutate(`1-RMSE` = 1 - RMSE)
+rmse_markers
+```
+
+### Plot the RMSE across top marker combinations, per tool
+
+```{r fig.width=12, fig.height=8}
+p1 <- ggplot(rmse_markers, aes(x = top_markers, y = `1-RMSE`, color = deconv_tool, group = deconv_tool)) +
+  geom_line(linewidth = 0.7) +
+  geom_point(size = 2) +
+  scale_color_manual(values = tool_colors) +
+  facet_wrap(~ deconv_tool, ncol = 5, scales = "free_y") +
+  labs(x = "Top markers", y = "1 - RMSE", color = "Tool") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 11),
+    axis.text.y = element_text(size = 11),
+    legend.position = "none"
+  )
+p1
+```
+
+```{r}
+ggsave(paste0(output_dir, "/lineplot_1-rmse_by_topmarkers_per_tool.pdf"), p1, width = 12, height = 8)
+```
+
+## SCC across top marker combinations
+
+We compute the SCC between `expected_tf` and `predicted_tf`, pooling all samples together, for every deconvolution tool at each `top_markers` level.
+
+```{r}
+scc_markers <- bench.res %>%
+  group_by(deconv_tool, top_markers) %>%
+  summarise(SCC = cor(expected_tf, predicted_tf, method = "spearman", use = "pairwise.complete.obs"),
+            .groups = "drop")
+scc_markers
+```
+
+### Plot the SCC across top marker combinations, per tool
+
+```{r fig.width=12, fig.height=8}
+p3 <- ggplot(scc_markers, aes(x = top_markers, y = SCC, color = deconv_tool, group = deconv_tool)) +
+  geom_line(linewidth = 0.7) +
+  geom_point(size = 2) +
+  scale_color_manual(values = tool_colors) +
+  facet_wrap(~ deconv_tool, ncol = 5, scales = "free_y") +
+  labs(x = "Top markers", y = "SCC (expected_tf vs predicted_tf)", color = "Tool") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 11),
+    axis.text.y = element_text(size = 11),
+    legend.position = "none"
+  )
+p3
+```
+
+```{r}
+ggsave(paste0(output_dir, "/lineplot_scc_by_topmarkers_per_tool.pdf"), p3, width = 12, height = 8)
+```
+
+## AUC-ROC across top marker combinations
+
+We compute the AUC-ROC score for every deconvolution tool at each `top_markers` level, discriminating tumor-containing samples (`expected_tf > 0`) from the healthy controls (`expected_tf == 0`) at each nonzero expected fraction, following the same approach used in `03_sequencing_depth_robustness.Rmd`.
+
+```{r}
+# Create a new dataframe where to store AUC-ROC results
+aucroc_data <- data.frame()
+# Select the samples with tumoral fractions > 0%
+unique_fractions <- unique(bench.res$expected_tf)
+unique_fractions <- subset(unique_fractions, unique_fractions != 0)
+
+# Loop over the top marker combinations
+for (markers in unique(bench.res$top_markers)) {
+
+  # Loop over the deconvolution tools
+  filt_markers <- subset(bench.res, bench.res$top_markers == markers)
+  for (deconv in unique(filt_markers$deconv_tool)) {
+
+    # Loop over the tumoral fractions specified above
+    for (fraction in unique_fractions) {
+      filt_df <- filt_markers %>%
+        filter(expected_tf %in% c(0, fraction) & deconv_tool == deconv)
+
+      # Compute the AUC-ROC score per combination and concatenate it to the final dataframe
+      auc_single_combination <- compute_auc_markers(filt_df, fraction, deconv, markers)
+      aucroc_data <- rbind(aucroc_data, auc_single_combination)
+    }
+  }
+}
+
+auc_markers <- aucroc_data %>%
+  group_by(deconv_tool, top_markers, expected_tf) %>%
+  summarize(AUC = mean(auc), .groups = "drop") %>%
+  group_by(deconv_tool, top_markers) %>%
+  summarize(AUC = mean(AUC), .groups = "drop")
+
+auc_markers$top_markers <- factor(auc_markers$top_markers, levels = marker_levels)
+auc_markers
+```
+
+### Plot the AUC-ROC across top marker combinations, per tool
+
+```{r fig.width=12, fig.height=8}
+p5 <- ggplot(auc_markers, aes(x = top_markers, y = AUC, color = deconv_tool, group = deconv_tool)) +
+  geom_line(linewidth = 0.7) +
+  geom_point(size = 2) +
+  scale_color_manual(values = tool_colors) +
+  facet_wrap(~ deconv_tool, ncol = 5, scales = "free_y") +
+  labs(x = "Top markers", y = "AUC-ROC", color = "Tool") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 11),
+    axis.text.y = element_text(size = 11),
+    legend.position = "none"
+  )
+p5
+```
+
+```{r}
+ggsave(paste0(output_dir, "/lineplot_auc_by_topmarkers_per_tool.pdf"), p5, width = 12, height = 8)
+```
