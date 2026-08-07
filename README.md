@@ -158,6 +158,16 @@ The analyses should be run in the following order. Each notebook generates plots
    * Adds a complementary **rank-then-aggregate (case-based)** scheme (Maier-Hein et al. 2018), compares it to 06's **aggregate-then-rank (metric-based)** scheme via **Kendall's tau**, runs a **bootstrap over combinations** (1000x) to estimate each tool's rank distribution, and performs a **Friedman test with Nemenyi post-hoc**.
    * Outputs to `plots/11_ranking_robustness/`.
 
+12. **12_dilution_correlation_analysis.Rmd**
+
+   * Analyzes how **reference-based and reference-free tools** respond to progressive **dilution of tumor cfDNA with healthy cfDNA** (`0X`-`5X`).
+   * Outputs to `plots/12_dilution_correlation/`.
+
+13. **13_top_markers_combination.Rmd**
+
+   * Analyzes how **reference-based tools** perform when varying the number of **top differentially methylated markers (DMRs)** used as input features, from **top25 up to top500**.
+   * Outputs to `plots/13_top_markers_combination/`.
+
 ---
 
 ### 2.5 Summary of Output Structure
@@ -176,7 +186,9 @@ plots/
 ├── 08_preciseness/              # Accuracy on tumor fraction estimation
 ├── 09_refree_different_samplesizes/  # Reference-free tools performance across sample sizes
 ├── 10_refbased_unmerged_mixtures/   # Reference-based tools on unmerged individual tumor samples
-└── 11_ranking_robustness/       # Rank-aggregation sensitivity and bootstrap stability plots
+├── 11_ranking_robustness/       # Rank-aggregation sensitivity and bootstrap stability plots
+├── 12_dilution_correlation/     # Dilution factor correlation, 1-RMSE accuracy, and AUC-ROC plots
+└── 13_top_markers_combination/  # Tool performance across top marker (DMR) panel sizes
 ```
 
 ---
