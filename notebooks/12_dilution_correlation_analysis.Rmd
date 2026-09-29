@@ -57,11 +57,11 @@ bench.res$dilution <- factor(bench.res$dilution, levels = paste0(0:5, "X"))
 
 ## Relative decrease in predicted tumor fraction, per sample
 
-In this part, we look at the *relative* decrease of `predicted_tf` as each sample is diluted, rather than its absolute value. For every sample (and, for the reference-based tools, every DMR tool), we express `predicted_tf` at each dilution level relative to that same sample's own `0X` (undiluted) value, on a log2 scale:
+In this part, we look at the relative decrease of predicted_tf as each sample is diluted, rather than its absolute value. For every sample (and, for the reference-based tools, every DMR tool), we express predicted_tf at each dilution level relative to that same sample's own 0X (undiluted) value:
 
-$$\text{relative decrease} = \log_2\left(\frac{\text{predicted_tf}}{\text{predicted_tf at 0X}}\right)$$
+$$\text{relative decrease} = 1 - \frac{\text{predicted\_tf at 0X}}{\text{predicted\_tf at dilution } t}$$
 
-By construction the relative decrease is always exactly `0` at `0X`. As a simple visual reference, we take the expected behaviour to be a halving of signal at every additional dilution step, i.e. `-1` per step on the log2 scale, reaching `-5` at `5X`.
+By construction the relative decrease is always exactly 0 at 0X. Because an nX dilution adds n times the original reads of tumour-free healthy DNA, the expected tumour fraction at nX is reduced to p₀/(n+1) of the undiluted value p₀. This metric linearises that expectation: a tool tracking the expected p₀/(n+1) dilution decreases by exactly −1 per dilution step, reaching −5 at 5X, providing a straight-line reference against which deviations are readily visible.
 
 ```{r}
 bench.res <- bench.res %>%
@@ -89,13 +89,16 @@ p4 <- ggplot(rel_decrease, aes(x = dilution_factor, y = relative_decrease, color
   geom_point(alpha = 0.6, size = 1.5) +
   scale_x_continuous(breaks = 0:5) +
   facet_wrap(~ method + deconv_tool, scales = "free_y") +
-  labs(x = "Dilution factor (X)", y = "Fold decrease in predicted_tf", color = "Sample") +
+  labs(x = "Dilution factor (X)", y = "Relative decrease in predicted TF", color = "Sample") +
   theme_classic() +
   theme(legend.position = "none")
 p4
 ```
 
 ```{r}
-ggsave(paste0(output_dir, "/fold_decrease_predicted_tf_per_tool.pdf"), p4, width = 14, height = 9)
+output_dir <- "../plots/12_dilution_correlation/"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = T)
+
+ggsave(paste0(output_dir, "/relative_decrease_predicted_tf_per_tool.pdf"), p4, width = 14, height = 9)
 ```
 

@@ -2288,7 +2288,9 @@ diagnostic device: it isolates how much of each tool's
 disagreement with `expected_tf` is a *fixable, linear* bias, versus
 irreducible scatter that a simple recalibration cannot remove. We apply the
 pooled (all-datasets) slope/intercept from the "Calibration slope and
-intercept" section above.
+intercept" section above. Because it is fitted and evaluated on the same
+data, it is an in-sample estimate; see "Cross-validated recalibration"
+below for the out-of-sample version.
 
 ```{r}
 calib_params <- calibration_stats %>% select(deconv_tool, Intercept, Slope)
@@ -2450,4 +2452,116 @@ p
 ```{r}
 output_file <- file.path(output_dir, "rmse_raw_vs_corrected.svg")
 ggsave(output_file, plot = p, width = 8, height = 6)
+```
+
+#### Cross-validated recalibration
+
+The recalibration above is fitted and evaluated on the same data, so its
+RMSE reduction is an in-sample estimate. To test whether the bias is
+correctable on unseen data, we fit each tool's calibration line on part
+of the data and apply it to the held-out part, using two grouped
+cross-validation schemes:
+
+- **Leave-one-tumor-type-out (LOTO)**: 8 folds; all samples (all
+  sequencing depths) of one tumor type are held out together, so no
+  material from the held-out tumor type is used for fitting.
+- **Leave-one-dataset-out (LODO)**: 3 folds (WGBS-TT, RRBS-TT, RRBS-CL);
+  tests whether a correction learned on other datasets transfers to a
+  new one.
+
+Each tumor type occurs in only one dataset. RMSE is computed on the
+pooled out-of-fold predictions, excluding `expected_tf = 0` as above.
+
+```{r}
+cv_recalibrate <- function(df, fold_col) {
+  folds <- unique(df[[fold_col]])
+  bind_rows(lapply(folds, function(f) {
+    train <- df[df[[fold_col]] != f, ]
+    test  <- df[df[[fold_col]] == f, ]
+    bind_rows(lapply(split(train, train$deconv_tool), function(tr) {
+      fit <- coef(lm(predicted_tf ~ expected_tf, data = tr))
+      test[test$deconv_tool == tr$deconv_tool[1], ] %>%
+        mutate(predicted_tf_cv = (predicted_tf - fit[[1]]) / fit[[2]])
+    })) %>%
+      mutate(fold = f)
+  }))
+}
+
+bench_cv <- bind_rows(
+  cv_recalibrate(bench_corrected, "tumor_type") %>% mutate(cv_scheme = "LOTO"),
+  cv_recalibrate(bench_corrected, "seq_method") %>% mutate(cv_scheme = "LODO")
+)
+stopifnot(nrow(bench_cv) == 2 * nrow(bench_corrected))
+```
+
+```{r}
+rmse_cv <- bench_cv %>%
+  filter(expected_tf != 0) %>%
+  group_by(deconv_tool, cv_scheme) %>%
+  summarise(RMSE_cv = sqrt(mean((expected_tf - predicted_tf_cv)^2)), .groups = "drop") %>%
+  tidyr::pivot_wider(names_from = cv_scheme, values_from = RMSE_cv, names_prefix = "RMSE_cv_")
+
+# Share of held-out folds in which recalibration lowered the RMSE.
+fold_improvement <- bench_cv %>%
+  filter(expected_tf != 0) %>%
+  group_by(deconv_tool, cv_scheme, fold) %>%
+  summarise(improved = sqrt(mean((expected_tf - predicted_tf_cv)^2)) <
+                       sqrt(mean((expected_tf - predicted_tf)^2)),
+            .groups = "drop") %>%
+  group_by(deconv_tool, cv_scheme) %>%
+  summarise(folds_improved = sprintf("%d/%d", sum(improved), n()), .groups = "drop") %>%
+  tidyr::pivot_wider(names_from = cv_scheme, values_from = folds_improved, names_prefix = "folds_improved_")
+
+rmse_compare_cv <- rmse_compare %>%
+  select(deconv_tool, RefType, RMSE_raw, RMSE_corrected) %>%
+  rename(RMSE_insample = RMSE_corrected) %>%
+  inner_join(rmse_cv, by = "deconv_tool") %>%
+  inner_join(fold_improvement, by = "deconv_tool") %>%
+  mutate(
+    reduction_insample_pct = 100 * (RMSE_raw - RMSE_insample) / RMSE_raw,
+    reduction_LOTO_pct     = 100 * (RMSE_raw - RMSE_cv_LOTO) / RMSE_raw,
+    reduction_LODO_pct     = 100 * (RMSE_raw - RMSE_cv_LODO) / RMSE_raw
+  ) %>%
+  arrange(desc(reduction_LOTO_pct))
+
+rmse_compare_cv
+```
+
+```{r}
+write.csv(rmse_compare_cv, file.path(output_dir, "rmse_raw_vs_corrected_cv.csv"), row.names = FALSE)
+```
+
+```{r fig.width=8, fig.height=6}
+rmse_cv_plot <- rmse_compare_cv %>%
+  select(deconv_tool, RefType, RMSE_raw, RMSE_insample, RMSE_cv_LOTO, RMSE_cv_LODO) %>%
+  tidyr::pivot_longer(starts_with("RMSE_"), names_to = "estimate", values_to = "RMSE") %>%
+  mutate(
+    estimate = factor(estimate,
+                      levels = c("RMSE_raw", "RMSE_insample", "RMSE_cv_LOTO", "RMSE_cv_LODO"),
+                      labels = c("Raw", "Recalibrated (in-sample)",
+                                 "Recalibrated (CV, leave-one-tumor-type-out)",
+                                 "Recalibrated (CV, leave-one-dataset-out)")),
+    deconv_tool = factor(deconv_tool, levels = rmse_compare$deconv_tool[order(rmse_compare$RMSE_raw)])
+  )
+
+p <- ggplot(rmse_cv_plot, aes(x = deconv_tool, y = RMSE)) +
+  geom_line(aes(group = deconv_tool), color = "grey75") +
+  geom_point(aes(shape = estimate, color = RefType), size = 2.8, stroke = 1.1) +
+  scale_shape_manual(values = c(1, 16, 17, 15), name = NULL) +
+  coord_flip() +
+  labs(title = "RMSE before and after recalibration: in-sample vs. cross-validated",
+       x = "", y = "RMSE") +
+  theme_classic() +
+  scale_color_manual(values = c(
+    "Reference-based" = "#009E73",
+    "Reference-free" = "#E69F00"
+  ), name = NULL) +
+  guides(shape = guide_legend(nrow = 2)) +
+  theme(legend.position = "bottom", legend.box = "vertical")
+p
+```
+
+```{r}
+output_file <- file.path(output_dir, "rmse_raw_vs_corrected_cv.svg")
+ggsave(output_file, plot = p, width = 8, height = 6.5)
 ```
