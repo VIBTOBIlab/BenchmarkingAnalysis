@@ -1,6 +1,6 @@
 # Benchmarking Study – Reproducibility Repository
 
-This repository contains the **R Markdown notebooks** (and corresponding **HTML outputs**) used to reproduce the analyses from our benchmarking study [publication link to be added].
+This repository contains the **R Markdown notebooks** (and corresponding **HTML outputs**) used to reproduce the analyses from our [benchmarking study](https://www.biorxiv.org/content/10.1101/2025.11.27.688590v1).
 
 The tutorials included here guide you through the main analyses presented in the paper. For additional visualizations published in the **Supplementary Figures** or made available in the **R Shiny App**, please visit:
 
