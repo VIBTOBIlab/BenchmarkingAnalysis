@@ -1,0 +1,61 @@
+name: Build Docker Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Docker/**"
+      - ".github/workflows/build-docker.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+env:
+  IMAGE: egiuili/benchmark-rstudio
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Pushing to Docker Hub is enabled only when these secrets are set
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tags:
+      #   push on main  -> latest, sha-<short sha>
+      #   release       -> <release tag> (e.g. v5), sha-<short sha>
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=latest,enable=${{ github.event_name != 'release' && github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event_name == 'release' }}
+            type=sha,prefix=sha-
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+
+      - name: Build (and push) image
+        uses: docker/build-push-action@v6
+        with:
+          context: Docker
+          platforms: linux/amd64
+          push: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache layers between runs, the Bioconductor/MeDeCom layers are slow to build
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
