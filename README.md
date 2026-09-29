@@ -20,6 +20,7 @@ The tutorials included here guide you through the main analyses presented in the
 3. [Calculate the sequencing saturation curves](#sequencing-saturation-calculation)
    - [What is a sequencing saturation curve?](#sequencing-saturation-calculation)
    - [Run the sequencing saturation calculation](#31-how-to-run-a-sequencing-saturation-calculation)
+4. [Compare reference-free LMCs to reference profiles](#4-compare-reference-free-lmcs-to-reference-profiles)
 
 
 ---
@@ -50,7 +51,7 @@ You can run the full analysis inside a Docker container (already built using the
       -p 8787:8787 \
       -e PASSWORD=mypassword \ # Modify the password with a personal one
       -v "$(pwd)":/home/rstudio/benchmark \
-      egiuili/benchmark-rstudio:v4
+      egiuili/benchmark-rstudio:v5
    ```
 
 2. Open [http://localhost:8787](http://localhost:8787) in your web browser to access RStudio Server inside the container.
@@ -243,3 +244,56 @@ zcat <your_cov.gz_file> | awk -v OFS='\t' -v i="$i" '$5 + $6 >= 3' | wc -l
 Where 3 corresponds to the minimum number of counts per CpGs.
 
 The [**--read_file**](resources/bam_readcounts.csv) corresponds to a csv file with sample name, percentage of downsampling and number of reads present in that BAM samples.
+
+---
+
+## 4. Compare reference-free LMCs to reference profiles
+
+Reference-free tools decompose the bulk methylation data into **latent methylation components (LMCs)** and their proportions per sample, without knowing which cell type each component represents. The two scripts below check which LMC corresponds to which known profile (here `healthy` and `tumor`) by comparing the LMCs to a reference matrix, using the plotting functions of [MeDeCom](https://github.com/lutsik/MeDeCom).
+
+| Script | Input LMCs | Description |
+|---|---|---|
+| [analyze_medecom_lcms.R](resources/analyze_medecom_lcms.R) | [medecom_lcm.rds](resources/medecom_lcm.rds) | MeDeCom result (`MeDeComSet` from `runMeDeCom`) |
+| [analyze_refreecellmix_lcms.R](resources/analyze_refreecellmix_lcms.R) | [refreecellmix_lcm.csv](resources/refreecellmix_lcm.csv) + [refreecellmix_estimated_proportions.csv](resources/refreecellmix_estimated_proportions.csv) | RefFreeCellMix LMCs (regions x K) and proportions (samples x K), wrapped into a `MeDeComSet` |
+
+Both scripts use [reference_samples_for_lcm.csv](resources/reference_samples_for_lcm.csv) as reference (first column: region IDs as `chr:start-end`, other columns: methylation of each reference profile). Missing reference values are imputed with the row (region) mean, and only the regions shared by the LMCs and the reference are compared.
+
+Each script writes a PDF with:
+
+1. a **dendrogram** clustering the LMCs together with the reference profiles (centered correlation);
+2. a **heatmap** of the LMCs and the reference profiles;
+3. a **barplot** and a **heatmap** of the estimated LMC proportions per sample.
+
+### 4.1 Requirements
+
+The scripts require the **MeDeCom** R package. It is included in the [Docker image](Docker/Dockerfile); for the conda or local setup, install it with:
+
+```r
+install.packages(c("devtools", "BiocManager"))
+BiocManager::install("RnBeads")
+devtools::install_github("lutsik/MeDeCom")
+```
+
+### 4.2 How to run
+
+Run the scripts from the repository root. Without arguments, they use the files in `resources/` and save the plots in `plots/lcm_analysis/`:
+
+```bash
+# MeDeCom (K and lambda select which solution of the MeDeCom run to plot)
+Rscript resources/analyze_medecom_lcms.R \
+    --medecom=resources/medecom_lcm.rds \
+    --reference=resources/reference_samples_for_lcm.csv \
+    --K=2 --lambda=0 \
+    --out=plots/lcm_analysis/medecom_lcms.pdf
+
+# RefFreeCellMix
+Rscript resources/analyze_refreecellmix_lcms.R \
+    --lcms=resources/refreecellmix_lcm.csv \
+    --proportions=resources/refreecellmix_estimated_proportions.csv \
+    --reference=resources/reference_samples_for_lcm.csv \
+    --out=plots/lcm_analysis/refreecellmix_lcms.pdf
+```
+
+All arguments are optional and follow the `--key=value` format. The script prints how many regions were shared with the reference.
+
+> **Note:** the MeDeCom LMCs are compared to the reference row by row. If the LMC matrix stored in the `.rds` file has no region names, the reference must contain exactly the same regions, in the same order, as the MeDeCom input; otherwise the script stops with an error.
