@@ -576,6 +576,14 @@ weight_schemes <- tribble(
   pivot_longer(-weighting, names_to = "component", values_to = "weight") %>%
   mutate(weighting = factor(weighting, levels = unique(weighting)))
 
+# Display names for the benchmark datasets in the exported figure.
+dataset_labels <- c(
+  wgbs = "WGBS-TT",
+  rrbs = "RRBS-TT",
+  cfrrbs = "RRBS-CL",
+  scalability = "scalability"
+)
+
 # Per-dataset scores from 06 (higher = better).
 atr_components <- bind_rows(
   env_06$overall_wgbs_score   %>% mutate(component = "wgbs"),
@@ -933,7 +941,10 @@ p_weighting <- ggplot(weighting_plot_df, aes(x = x, y = Rank, group = deconv_too
   facet_wrap(~scheme) +
   labs(
     title = "Sensitivity of the ranking to the dataset weights",
-    subtitle = "Weights: WGBS / RRBS / cfRRBS / scalability",
+    subtitle = paste(
+      "Weights:",
+      paste(dataset_labels[c("wgbs", "rrbs", "cfrrbs", "scalability")], collapse = " / ")
+    ),
     x = NULL,
     y = "Rank (1 = best)"
   ) +
@@ -946,6 +957,55 @@ p_weighting
 ```{r}
 ggsave(file.path(output_dir, "dataset_weight_sensitivity.svg"),
        p_weighting, width = 13, height = 6)
+```
+
+### Leave-one-out rank heatmap
+
+Rank of each tool on the full data and after leaving out each tumor
+type or benchmark dataset (Step 6).
+
+```{r fig.width=13, fig.height=8}
+loo_level_order <- c("Full data", "Leave-one-tumor-type-out", "Leave-one-dataset-out")
+
+loo_plot_df <- bind_rows(
+  full_data_ranks %>%
+    transmute(scheme, deconv_tool, Rank = Rank_full,
+              level = "Full data", left_out = "None (full data)"),
+  loo_results %>%
+    select(scheme, deconv_tool, Rank, level, left_out) %>%
+    mutate(left_out = ifelse(left_out %in% names(dataset_labels),
+                             dataset_labels[left_out], left_out))
+) %>%
+  # Order tools within each scheme by their full-data rank (best on top).
+  left_join(full_data_ranks, by = c("scheme", "deconv_tool")) %>%
+  mutate(
+    tool_key = paste(scheme, deconv_tool, sep = "___"),
+    tool_key = reorder(tool_key, -Rank_full),
+    scheme = scheme_labels[scheme],
+    level = factor(level, levels = loo_level_order)
+  )
+
+p_loo <- ggplot(loo_plot_df, aes(x = left_out, y = tool_key, fill = Rank)) +
+  geom_tile(color = "white", linewidth = 0.2) +
+  geom_text(aes(label = Rank), size = 3) +
+  scale_fill_distiller(palette = "YlGnBu", direction = 1, name = "Rank") +
+  scale_y_discrete(labels = function(x) sub("^.*___", "", x)) +
+  facet_grid(scheme ~ level, scales = "free", space = "free_x") +
+  labs(
+    title = "Leave-one-out sensitivity of the ranking",
+    x = "Left-out unit",
+    y = NULL
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(panel.grid = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+p_loo
+```
+
+```{r}
+ggsave(file.path(output_dir, "leave_one_out_ranks.svg"),
+       p_loo, width = 13, height = 8)
 ```
 
 ## Summary
